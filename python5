@@ -1,0 +1,48 @@
+import json
+import stripe
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# System Configurations
+stripe.api_key = "YOUR_STRIPE_SECRET_KEY"
+WEBHOOK_SECRET = "whsec_YOUR_WEBHOOK_SIGNING_SECRET"
+TARGET_PRICE_ID = "price_1Q..."  # Replace with the Price ID linked to your Payment Link
+
+# Global Owner Interface State
+owner_vault_usd = 0.0
+
+@app.route('/stripe-webhook', methods=['POST'])
+def stripe_webhook_listener():
+    payload = request.data
+    sig_header = request.headers.get('HTTP_STRIPE_SIGNATURE')
+
+    try:
+        # Securely verify that the event actually originated from Stripe
+        event = stripe.Webhook.construct_event(payload, sig_header, WEBHOOK_SECRET)
+    except ValueError:
+        return 'Invalid payload', 400
+    except stripe.error.SignatureVerificationError:
+        return 'Invalid signature', 400
+
+    # Catch successful checkout sessions initiated by the link
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        
+        # Pull detailed line items to verify if they used your specific product link
+        line_items = stripe.checkout.Session.list_line_items(session['id'], limit=1)
+        if line_items['data'] and line_items['data'][0]['price']['id'] == TARGET_PRICE_ID:
+            
+            # Extract payment amount (Stripe records this in cents)
+            amount_paid_usd = session['amount_total'] / 100.0
+            
+            # Route funds directly to Russell Stone's cash ledger
+            global owner_vault_usd
+            owner_vault_usd += amount_paid_usd
+            
+            print(f"[SUCCESS] Verified payment via link. Added ${amount_paid_usd:.2f} to Russell Stone's Balance Sheet.")
+            
+    return jsonify(success=True)
+
+if __name__ == '__main__':
+    app.run(port=4242)
