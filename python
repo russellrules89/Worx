@@ -1,0 +1,27 @@
+class CorporateBillingSystem:
+    def __init__(self, platform_engine, usd_rate_per_hour=25.00):
+        self.engine = platform_engine
+        self.usd_rate_per_hour = usd_rate_per_hour # What clients pay in real cash
+        self.total_revenue_collected = 0.0
+
+    def generate_client_invoice(self, client_id):
+        """Filters logs to calculate USD billed to corporate clients."""
+        client_tasks = [t for t in self.engine.task_logs if t["client_id"] == client_id]
+        total_hours = sum(t["hours"] for t in client_tasks)
+        total_invoice_usd = total_hours * self.usd_rate_per_hour
+        
+        invoice = {
+            "invoice_id": str(uuid.uuid4())[:8],
+            "client_id": client_id,
+            "billable_hours": total_hours,
+            "rate_per_hour": self.usd_rate_per_hour,
+            "amount_due_usd": total_invoice_usd,
+            "recipient": "Russell Stone (Owner)"
+        }
+        return invoice
+
+    def process_client_payment(self, invoice_amount_usd):
+        """Routes incoming cash revenue directly to the owner pool."""
+        self.total_revenue_collected += invoice_amount_usd
+        self.engine.owner_cash_pool += invoice_amount_usd
+        return f"${invoice_amount_usd} converted to owner cash balance."
