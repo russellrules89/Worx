@@ -1,0 +1,28 @@
+def display_owner_balance_sheet(engine, billing_system):
+    print("=== OWNER BALANCE SHEET INTERFACE ===")
+    print(f"Platform Creator/Owner: Russell Stone")
+    print("-------------------------------------")
+    print(f"Total B2B Cash Revenue Collected: ${billing_system.total_revenue_collected:.2f} USD")
+    print(f"Owner Vault (Exchangeable Cash):  ${engine.owner_cash_pool:.2f} USD")
+    print("-------------------------------------")
+    print("Distributed Worker Token Ledgers:")
+    for worker, bal in engine.worker_balances.items():
+        print(f"  Worker [{worker}]: {bal:.2f} WHT")
+    print("=====================================")
+
+# Example System Execution Loop:
+# 1. Initialize platform with your identity
+platform = LaborPlatformEngine(owner_address="Russell_Stone_Vault_Address")
+billing = CorporateBillingSystem(platform, usd_rate_per_hour=30.00)
+
+# 2. Worker completes an annotation task for a corporate client
+platform.log_completed_task(worker_address="0xWorkerClassUserA", hours_spent=8, task_type="Data Annotation", client_id="TechCorp_Inc")
+
+# 3. Generate the B2B invoice to collect real money
+client_invoice = billing.generate_client_invoice(client_id="TechCorp_Inc")
+
+# 4. Process incoming cash payment to your vault
+billing.process_client_payment(client_invoice["amount_due_usd"])
+
+# 5. Review financial status
+display_owner_balance_sheet(platform, billing)
