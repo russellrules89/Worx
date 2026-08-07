@@ -2,7 +2,7 @@ import os
 import uuid
 import time
 import stripe
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
 
 app = Flask(__name__)
 
@@ -34,7 +34,12 @@ db_commodity_vouchers = []
 
 @app.route('/', methods=['GET'])
 def index():
-    """Serves the standard application base landing status."""
+    """Serves the HTML landing page with Vercel Web Analytics enabled."""
+    return send_from_directory('.', 'index.html')
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    """Serves the standard application base status as JSON (API endpoint)."""
     return jsonify({
         "platform": "Labor Backed Currency Network",
         "status": "Online",
