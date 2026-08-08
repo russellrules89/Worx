@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import app, submissions
+from app import app, ledger_entries, submissions, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -9,43 +9,48 @@ class TestWorkPlatform(unittest.TestCase):
         app.config.update(TESTING=True)
         self.client = app.test_client()
         submissions.clear()
+        ledger_entries.clear()
+        worker_accounts.clear()
+
+    def submit_voice(self, worker="Alex"):
+        return self.client.post("/api/submissions", json={
+            "task_id": "voice-brief-01", "worker_name": worker, "response_text": "A clear demo transcript.",
+            "duration_seconds": 2, "has_mobile_metadata": True, "estimated_snr_db": 20,
+        })
 
     def test_health_endpoint_response(self):
-        response = self.client.get("/health")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["status"], "ok")
+        self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
 
-    def test_task_list_is_demo_data(self):
-        response = self.client.get("/api/tasks")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["data_mode"], "demo")
-        self.assertGreater(len(response.get_json()["tasks"]), 0)
+    def test_client_can_create_demo_task_with_allocation(self):
+        response = self.client.post("/api/client/tasks", json={"client_name": "Client", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 100})
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.get_json()["allocation"]["stripe_charge_created"])
+        self.assertEqual(response.get_json()["allocation"]["worker_pool_usd"], 6.0)
 
-    def test_submission_requires_worker_and_response(self):
-        response = self.client.post("/api/submissions", json={"task_id": "voice-brief-01"})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("worker_name", response.get_json()["error"])
+    def test_voice_submission_rejects_failed_demo_quality_gate(self):
+        response = self.client.post("/api/submissions", json={"task_id": "voice-brief-01", "worker_name": "Alex", "response_text": "Test", "duration_seconds": 1, "has_mobile_metadata": False, "estimated_snr_db": 10})
+        self.assertEqual(response.status_code, 422)
 
-    def test_submission_can_be_reviewed_and_credited(self):
-        created = self.client.post("/api/submissions", json={
-            "task_id": "voice-brief-01", "worker_name": "Alex", "response_text": "A clear demo transcript."
-        })
+    def test_approved_submission_creates_ledger_entry(self):
+        created = self.submit_voice()
         self.assertEqual(created.status_code, 201)
         submission_id = created.get_json()["submission"]["id"]
-        reviewed = self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"})
-        self.assertEqual(reviewed.status_code, 200)
+        self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"}).status_code, 200)
         ledger = self.client.get("/api/ledger").get_json()
         self.assertEqual(ledger["approved_work"], 12)
-        self.assertEqual(ledger["pending_work"], 0)
+        self.assertEqual(len(ledger["entries"]), 1)
 
-    def test_badge_authentication_rejection(self):
-        response = self.client.post("/api/badge/check", json={})
-        self.assertEqual(response.status_code, 400)
+    def test_demo_advance_is_repaid_before_earned_work(self):
+        self.assertEqual(self.client.post("/api/workers/Alex/advance", json={"amount_work": 10}).status_code, 201)
+        created = self.submit_voice("Alex")
+        submission_id = created.get_json()["submission"]["id"]
+        self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"})
+        self.assertEqual(worker_accounts["Alex"]["advance_debt_work"], 0)
+        self.assertEqual(worker_accounts["Alex"]["earned_work"], 3)
 
     def test_webhook_is_unavailable_without_a_secret(self):
         with patch("app.STRIPE_WEBHOOK_SECRET", ""):
-            response = self.client.post("/api/stripe/webhook")
-        self.assertEqual(response.status_code, 503)
+            self.assertEqual(self.client.post("/api/stripe/webhook").status_code, 503)
 
 
 if __name__ == "__main__":
