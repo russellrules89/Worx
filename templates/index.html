@@ -3,109 +3,40 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Worx dashboard</title>
+    <title>Worx | Human data work</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="min-h-screen bg-neutral-950 text-neutral-100">
     <header class="border-b border-neutral-800 bg-neutral-900 px-6 py-4">
       <div class="mx-auto flex max-w-6xl items-center justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">Worx</p>
-          <h1 class="text-lg font-bold">Operations dashboard</h1>
-        </div>
-        <button id="wallet-button" class="rounded border border-neutral-700 bg-neutral-800 px-4 py-2 text-xs font-semibold hover:border-cyan-500">
-          Connect wallet
-        </button>
+        <div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">Worx</p><h1 class="text-lg font-bold">Human data work, review, and rewards</h1></div>
+        <span class="rounded bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300">MVP preview</span>
       </div>
     </header>
-
-    <main class="mx-auto max-w-6xl space-y-8 p-6">
-      <p class="rounded border border-amber-800 bg-amber-950/50 p-3 text-sm text-amber-200">
-        Preview mode: all financial and badge data shown here is demonstration data.
-      </p>
+    <main class="mx-auto max-w-6xl space-y-6 p-6">
+      <p class="rounded border border-amber-800 bg-amber-950/50 p-3 text-sm text-amber-200">Demo mode: submissions are stored only while this server instance runs. No audio is recorded, no identity is verified, and no money, voucher, or token is issued.</p>
       <section class="grid gap-4 md:grid-cols-3">
-        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
-          <p class="text-xs uppercase tracking-wider text-neutral-400">Corporate billing</p>
-          <p id="billing" class="mt-2 text-3xl font-bold text-cyan-400">Loading</p>
-        </article>
-        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
-          <p class="text-xs uppercase tracking-wider text-neutral-400">Worker tokens</p>
-          <p id="tokens" class="mt-2 text-3xl font-bold text-emerald-400">Loading</p>
-        </article>
-        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
-          <p class="text-xs uppercase tracking-wider text-neutral-400">Voucher liability</p>
-          <p id="liability" class="mt-2 text-3xl font-bold text-rose-400">Loading</p>
-        </article>
+        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-5"><p class="text-xs uppercase tracking-wider text-neutral-400">Approved WORK</p><p id="approved-work" class="mt-2 text-3xl font-bold text-emerald-400">0</p></article>
+        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-5"><p class="text-xs uppercase tracking-wider text-neutral-400">Pending review</p><p id="pending-work" class="mt-2 text-3xl font-bold text-amber-300">0</p></article>
+        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-5"><p class="text-xs uppercase tracking-wider text-neutral-400">Estimated demo value</p><p id="estimated-value" class="mt-2 text-3xl font-bold text-cyan-400">$0.00</p></article>
       </section>
-
       <section class="grid gap-6 lg:grid-cols-2">
-        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-6">
-          <h2 class="font-bold">Audio annotation</h2>
-          <p class="mt-2 text-sm text-neutral-400">This UI does not access the microphone or transmit audio.</p>
-          <p id="capture-status" class="mt-5 text-sm text-neutral-300">Capture is inactive.</p>
-          <div class="mt-4 flex gap-3">
-            <button id="start-capture" class="rounded bg-cyan-500 px-4 py-2 text-sm font-bold text-neutral-950">Start demo</button>
-            <button id="stop-capture" class="rounded border border-neutral-700 px-4 py-2 text-sm">Stop</button>
-          </div>
-        </article>
-        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-6">
-          <h2 class="font-bold">Voucher conversion</h2>
-          <p class="mt-2 text-sm text-neutral-400">Preview only. No redemption or payment is initiated.</p>
-          <label class="mt-5 block text-sm" for="destination">Destination</label>
-          <select id="destination" class="mt-2 w-full rounded border border-neutral-700 bg-neutral-950 p-2">
-            <option>Electric utilities</option>
-            <option>Fuel provider</option>
-            <option>Grocery provider</option>
-          </select>
-          <button id="redeem" class="mt-4 rounded bg-emerald-500 px-4 py-2 text-sm font-bold text-neutral-950">Preview conversion</button>
-          <p id="redemption-status" class="mt-3 text-sm text-neutral-300" aria-live="polite"></p>
-        </article>
+        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-6"><h2 class="font-bold">Available work</h2><p class="mt-1 text-sm text-neutral-400">Choose a task and submit a text response. Voice work uses a transcript placeholder until secure audio storage and consent are implemented.</p><div id="task-list" class="mt-5 space-y-3"></div></article>
+        <article class="rounded-lg border border-neutral-800 bg-neutral-900 p-6"><h2 class="font-bold">Submit contribution</h2><form id="submission-form" class="mt-5 space-y-4"><label class="block text-sm">Your display name<input id="worker-name" required maxlength="80" class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 p-2" placeholder="Alex" /></label><label class="block text-sm">Selected task<select id="task-id" required class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 p-2"></select></label><label class="block text-sm">Response or transcript<textarea id="response-text" required maxlength="2000" rows="5" class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 p-2" placeholder="Enter your annotation or a demo voice transcript"></textarea></label><button class="rounded bg-cyan-500 px-4 py-2 text-sm font-bold text-neutral-950">Submit for review</button><p id="submission-status" class="text-sm" aria-live="polite"></p></form></article>
       </section>
+      <section class="rounded-lg border border-neutral-800 bg-neutral-900 p-6"><div class="flex items-baseline justify-between"><div><h2 class="font-bold">Review queue</h2><p class="mt-1 text-sm text-neutral-400">Demo reviewer controls. Production requires authenticated, authorized reviewers.</p></div><button id="refresh" class="text-sm text-cyan-300">Refresh</button></div><div id="submission-list" class="mt-5 space-y-3"></div></section>
     </main>
-
     <script>
       const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-
-      async function loadLedger() {
-        try {
-          const response = await fetch('/api/owner/balance');
-          if (!response.ok) throw new Error('Ledger request failed');
-          const data = await response.json();
-          document.querySelector('#billing').textContent = currency.format(data.corporate_client_billing_usd);
-          document.querySelector('#tokens').textContent = `${data.distributed_worker_tokens.toLocaleString()} WORK`;
-          document.querySelector('#liability').textContent = currency.format(data.voucher_redemption_liability_usd);
-        } catch (error) {
-          for (const id of ['billing', 'tokens', 'liability']) {
-            document.querySelector(`#${id}`).textContent = 'Unavailable';
-          }
-        }
-      }
-
-      document.querySelector('#wallet-button').addEventListener('click', async () => {
-        if (!window.ethereum) {
-          document.querySelector('#wallet-button').textContent = 'No wallet detected';
-          return;
-        }
-        try {
-          const [address] = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          document.querySelector('#wallet-button').textContent = `${address.slice(0, 6)}…${address.slice(-4)}`;
-        } catch (_) {
-          document.querySelector('#wallet-button').textContent = 'Connection declined';
-        }
-      });
-
-      document.querySelector('#start-capture').addEventListener('click', () => {
-        document.querySelector('#capture-status').textContent = 'Demo capture is active; no audio is recorded.';
-      });
-      document.querySelector('#stop-capture').addEventListener('click', () => {
-        document.querySelector('#capture-status').textContent = 'Demo capture stopped.';
-      });
-      document.querySelector('#redeem').addEventListener('click', () => {
-        const destination = document.querySelector('#destination').value;
-        document.querySelector('#redemption-status').textContent = `Preview request prepared for ${destination}; no transaction was sent.`;
-      });
-
-      loadLedger();
+      const taskList = document.querySelector('#task-list'); const taskSelect = document.querySelector('#task-id'); const submissionList = document.querySelector('#submission-list');
+      function escapeHtml(value) { const node = document.createElement('span'); node.textContent = value; return node.innerHTML; }
+      async function loadTasks() { const response = await fetch('/api/tasks'); const { tasks } = await response.json(); taskList.innerHTML = tasks.map(task => `<div class="rounded border border-neutral-800 p-4"><div class="flex justify-between gap-4"><strong>${escapeHtml(task.title)}</strong><span class="text-emerald-300">${task.reward_work} WORK</span></div><p class="mt-1 text-sm text-neutral-400">${escapeHtml(task.instructions)}</p></div>`).join(''); taskSelect.innerHTML = tasks.map(task => `<option value="${task.id}">${task.title} — ${task.reward_work} WORK</option>`).join(''); }
+      async function loadLedger() { const response = await fetch('/api/ledger'); const data = await response.json(); document.querySelector('#approved-work').textContent = data.approved_work; document.querySelector('#pending-work').textContent = data.pending_work; document.querySelector('#estimated-value').textContent = currency.format(data.estimated_voucher_value_usd); }
+      async function loadSubmissions() { const response = await fetch('/api/submissions'); const { submissions } = await response.json(); submissionList.innerHTML = submissions.length ? submissions.map(item => `<div class="rounded border border-neutral-800 p-4"><div class="flex flex-wrap justify-between gap-3"><div><strong>${escapeHtml(item.task_title)}</strong><p class="text-sm text-neutral-400">${escapeHtml(item.worker_name)} · ${item.reward_work} WORK · ${item.status.replace('_', ' ')}</p></div>${item.status === 'pending_review' ? `<div class="flex gap-2"><button data-id="${item.id}" data-decision="approved" class="review rounded bg-emerald-500 px-3 py-1 text-xs font-bold text-neutral-950">Approve</button><button data-id="${item.id}" data-decision="needs_revision" class="review rounded border border-neutral-600 px-3 py-1 text-xs">Request revision</button></div>` : ''}</div><p class="mt-3 whitespace-pre-wrap text-sm text-neutral-300">${escapeHtml(item.response_text)}</p></div>`).join('') : '<p class="text-sm text-neutral-400">No submissions yet.</p>'; document.querySelectorAll('.review').forEach(button => button.addEventListener('click', reviewSubmission)); }
+      async function reviewSubmission(event) { const { id, decision } = event.currentTarget.dataset; const response = await fetch(`/api/submissions/${id}/review`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({decision}) }); if (!response.ok) { alert('Review action was not accepted.'); return; } await refresh(); }
+      async function refresh() { await Promise.all([loadLedger(), loadSubmissions()]); }
+      document.querySelector('#submission-form').addEventListener('submit', async event => { event.preventDefault(); const status = document.querySelector('#submission-status'); status.textContent = 'Submitting…'; const response = await fetch('/api/submissions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({task_id: taskSelect.value, worker_name: document.querySelector('#worker-name').value, response_text: document.querySelector('#response-text').value}) }); const data = await response.json(); if (!response.ok) { status.textContent = data.error || 'Submission failed.'; status.className = 'text-sm text-rose-300'; return; } event.target.reset(); status.textContent = 'Submitted for review.'; status.className = 'text-sm text-emerald-300'; await refresh(); });
+      document.querySelector('#refresh').addEventListener('click', refresh); Promise.all([loadTasks(), refresh()]).catch(() => { taskList.textContent = 'Unable to load the demo.'; });
     </script>
   </body>
 </html>
