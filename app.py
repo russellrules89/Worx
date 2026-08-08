@@ -1,22 +1,20 @@
 import os
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 import stripe
 from flask import Flask, jsonify, render_template, request
 
-app = Flask(__name__, template_folder="templates")
+from config import PlatformConfig
 
-STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+app = Flask(__name__, template_folder="templates")
+app.config.from_object(PlatformConfig)
+
+STRIPE_PUBLIC_KEY = PlatformConfig.STRIPE_PUBLIC_KEY
+STRIPE_WEBHOOK_SECRET = PlatformConfig.STRIPE_WEBHOOK_SECRET
 
 
 def configured_multiplier() -> Decimal:
-    raw_value = os.environ.get("PAYOUT_MULTIPLIER", "1.10")
-    try:
-        value = Decimal(raw_value)
-    except InvalidOperation:
-        return Decimal("1.10")
-    return value if value >= 0 else Decimal("1.10")
+    return PlatformConfig.payout_multiplier()
 
 
 @app.get("/")
@@ -87,4 +85,4 @@ def intake_stripe_events():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
