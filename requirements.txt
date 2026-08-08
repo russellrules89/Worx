@@ -1,2 +1,2 @@
-Flask
-stripe
+Flask>=3.0,<4.0
+stripe>=8.0,<9.0
