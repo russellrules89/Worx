@@ -1,100 +1,90 @@
 import os
-import uuid
-import time
+from decimal import Decimal, InvalidOperation
+
 import stripe
-from flask import Flask, request, jsonify, Response, send_from_directory
+from flask import Flask, jsonify, render_template, request
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 
-# =====================================================================
-# SYSTEM PARAMETERS & CONFIGURATIONS FOR RUSSELL STONE
-# =====================================================================
-ADMIN_EMAIL = "russellrules89@gmail.com"
-OWNER_ETH_ADDRESS = "0xRussellStoneVoucherPoolVault"
+STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "sk_live_Placeholder")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_Placeholder")
-TARGET_PRICE_ID = os.environ.get("TARGET_PRICE_ID", "price_1Q_Placeholder")
 
-# System Matrices
-BASE_TOKENS_PER_HOUR = 1.0
-CLIENT_BILLING_RATE_USD = 25.00
-TOKEN_REVENUE_EXCHANGE_INDEX = 20.00
+def configured_multiplier() -> Decimal:
+    raw_value = os.environ.get("PAYOUT_MULTIPLIER", "1.10")
+    try:
+        value = Decimal(raw_value)
+    except InvalidOperation:
+        return Decimal("1.10")
+    return value if value >= 0 else Decimal("1.10")
 
-total_stripe_cash_collected_usd = 0.0
 
-db_worker_ledgers = {}
-db_labor_tasks_log = []
-db_b2b_invoices = []
-db_commodity_vouchers = []
+@app.get("/")
+def serve_dashboard():
+    return render_template("index.html", stripe_public_key=STRIPE_PUBLIC_KEY)
 
-# =====================================================================
-# REQUIRED VERCEL RUNTIME ROUTING AND HEALTH ENDPOINTS
-# =====================================================================
 
-@app.route('/', methods=['GET'])
-def index():
-    """Serves the HTML landing page with Vercel Web Analytics enabled."""
-    return send_from_directory('.', 'index.html')
+@app.get("/health")
+def system_health():
+    return jsonify(status="ok", service="worx"), 200
 
-@app.route('/api/status', methods=['GET'])
-def api_status():
-    """Serves the standard application base status as JSON (API endpoint)."""
-    return jsonify({
-        "platform": "Labor Backed Currency Network",
-        "status": "Online",
-        "administrator": ADMIN_EMAIL
-    }), 200
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Serves the platform live diagnostic uptime metric."""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": int(time.time()),
-        "database_connectivity": True
-    }), 200
+@app.get("/favicon.ico")
+@app.get("/favicon.png")
+def favicon():
+    return "", 204
 
-@app.route('/favicon.ico', methods=['GET'])
-def favicon_silencer():
-    """Intercepts legacy browser favicon asset queries with a no-content payload."""
-    return Response(status=204)
 
-# =====================================================================
-# PLATFORM SYSTEM CORE ENDPOINTS
-# =====================================================================
+@app.get("/api/owner/balance")
+def corporate_balance_sheet():
+    """Return clearly labeled demonstration data for the dashboard preview."""
+    corporate_billing = Decimal("142000.00")
+    worker_tokens = Decimal("96500.00")
+    liability = worker_tokens * configured_multiplier()
 
-@app.route('/stripe-webhook', methods=['POST'])
-def stripe_webhook_listener():
-    global total_stripe_cash_collected_usd
-    payload = request.data
-    sig_header = request.headers.get('HTTP_STRIPE_SIGNATURE')
+    return jsonify(
+        data_mode="demo",
+        corporate_client_billing_usd=float(corporate_billing),
+        distributed_worker_tokens=float(worker_tokens),
+        voucher_redemption_liability_usd=float(liability),
+        net_platform_reserve_balance=float(corporate_billing - liability),
+    )
+
+
+@app.post("/api/badge/check")
+def perform_badge_check():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="A JSON request body is required"), 400
+
+    worker_id = payload.get("worker_id")
+    if not isinstance(worker_id, str) or not worker_id.strip():
+        return jsonify(success=False, error="worker_id is required"), 400
+
+    return jsonify(
+        success=True,
+        worker_id=worker_id.strip(),
+        badge_authenticated=False,
+        message="Demo response only; connect an authorized identity provider before production use.",
+    )
+
+
+@app.post("/api/stripe/webhook")
+def intake_stripe_events():
+    if not STRIPE_WEBHOOK_SECRET:
+        return jsonify(error="Stripe webhook is not configured"), 503
+
+    signature = request.headers.get("Stripe-Signature")
+    if not signature:
+        return jsonify(error="Missing Stripe-Signature header"), 400
 
     try:
-        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+        stripe.Webhook.construct_event(request.get_data(), signature, STRIPE_WEBHOOK_SECRET)
     except (ValueError, stripe.error.SignatureVerificationError):
-        return 'Signature Verification Failed', 400
+        return jsonify(error="Invalid Stripe webhook signature"), 400
 
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        line_items = stripe.checkout.Session.list_line_items(session['id'], limit=1)
-        if line_items['data'] and line_items['data']['price']['id'] == TARGET_PRICE_ID:
-            received_cash_usd = session['amount_total'] / 100.0
-            total_stripe_cash_collected_usd += received_cash_usd
+    return jsonify(received=True), 200
 
-            db_b2b_invoices.append({
-                "invoice_id": str(uuid.uuid4())[:8],
-                "client_id": session.get("client_reference_id", "STRIPE_LINK_CLIENT"),
-                "amount_due_usd": received_cash_usd,
-                "payment_status": "paid",
-                "owner_routing_target": ADMIN_EMAIL
-            })
-            return jsonify(success=True), 200
 
-    return jsonify(success=True), 200
-
-# Expose WSGI application handler reference variable for Vercel's engine mapping
-app_handler = app
-
-if __name__ == '__main__':
-    app.run(port=4242)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
