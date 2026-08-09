@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import app, ledger_entries, submissions, token_issuances, worker_accounts
+from app import app, investor_interest_records, ledger_entries, submissions, token_issuances, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -11,6 +11,7 @@ class TestWorkPlatform(unittest.TestCase):
         submissions.clear()
         ledger_entries.clear()
         token_issuances.clear()
+        investor_interest_records.clear()
         worker_accounts.clear()
 
     def submit_voice(self, worker="Alex"):
@@ -28,6 +29,12 @@ class TestWorkPlatform(unittest.TestCase):
         self.assertFalse(response.get_json()["allocation"]["usdc_transfer_created"])
         self.assertFalse(response.get_json()["allocation"]["voucher_issued"])
         self.assertEqual(response.get_json()["allocation"]["worker_voucher_pool_usdc_equivalent"], 6.0)
+
+    def test_investor_interest_never_accepts_an_investment(self):
+        response = self.client.post("/api/investor-interest", json={"name": "Jordan", "email": "jordan@example.com"})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(investor_interest_records), 1)
+        self.assertIn("No funds", response.get_json()["message"])
 
     def test_voice_submission_rejects_failed_demo_quality_gate(self):
         response = self.client.post("/api/submissions", json={"task_id": "voice-brief-01", "worker_name": "Alex", "response_text": "Test", "duration_seconds": 1, "has_mobile_metadata": False, "estimated_snr_db": 10})
