@@ -20,6 +20,7 @@ class TestWorkPlatform(unittest.TestCase):
     def submit_voice(self, worker="Alex"):
         return self.client.post("/api/submissions", json={
             "task_id": "voice-brief-01", "worker_name": worker, "response_text": "A clear demo transcript.",
+            "consent": {"accepted": True, "policy_version": "2026-08-preview"},
             "duration_seconds": 2, "has_mobile_metadata": True, "estimated_snr_db": 20,
         })
 
@@ -40,14 +41,34 @@ class TestWorkPlatform(unittest.TestCase):
         self.assertIn("No funds", response.get_json()["message"])
 
     def test_voice_submission_rejects_failed_demo_quality_gate(self):
-        response = self.client.post("/api/submissions", json={"task_id": "voice-brief-01", "worker_name": "Alex", "response_text": "Test", "duration_seconds": 1, "has_mobile_metadata": False, "estimated_snr_db": 10})
+        response = self.client.post("/api/submissions", json={"task_id": "voice-brief-01", "worker_name": "Alex", "response_text": "Test", "consent": {"accepted": True, "policy_version": "2026-08-preview"}, "duration_seconds": 1, "has_mobile_metadata": False, "estimated_snr_db": 10})
         self.assertEqual(response.status_code, 422)
+
+    def test_submission_requires_current_consent(self):
+        response = self.client.post("/api/submissions", json={"task_id": "label-brief-02", "worker_name": "Alex", "response_text": "Classified"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_onboarding_keeps_external_integrations_disabled(self):
+        data = self.client.get("/api/worker/onboarding").get_json()
+        self.assertTrue(data["consent"]["required"])
+        self.assertFalse(data["uploads"]["enabled"])
+        self.assertFalse(data["identity_verification"]["enabled"])
+        self.assertFalse(data["settlement"]["enabled"])
+
+    def test_submission_queue_requires_contract_administrator(self):
+        self.assertEqual(self.client.get("/api/submissions").status_code, 403)
+        self.assertEqual(self.client.get("/api/submissions", headers=self.contract_admin_headers).status_code, 200)
+
+    def test_review_requires_contract_administrator(self):
+        created = self.submit_voice()
+        submission_id = created.get_json()["submission"]["id"]
+        self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"}).status_code, 403)
 
     def test_approved_submission_creates_ledger_entry(self):
         created = self.submit_voice()
         self.assertEqual(created.status_code, 201)
         submission_id = created.get_json()["submission"]["id"]
-        self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"}).status_code, 200)
+        self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"}).status_code, 200)
         ledger = self.client.get("/api/ledger").get_json()
         self.assertEqual(ledger["approved_wwp_payment_work"], 12)
         self.assertEqual(len(ledger["entries"]), 1)
@@ -86,8 +107,8 @@ class TestWorkPlatform(unittest.TestCase):
     def test_contract_backing_moves_to_completed_work_after_approval(self):
         contract = self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 20}).get_json()["contract"]
         task = self.client.post("/api/client/tasks", headers=self.contract_admin_headers, json={"client_name": "Northstar Labs", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 2, "future_contract_id": contract["id"]}).get_json()["task"]
-        submission = self.client.post("/api/submissions", json={"task_id": task["id"], "worker_name": "Alex", "response_text": "Complete"}).get_json()["submission"]
-        self.assertEqual(self.client.post(f"/api/submissions/{submission['id']}/review", json={"decision": "approved"}).status_code, 200)
+        submission = self.client.post("/api/submissions", json={"task_id": task["id"], "worker_name": "Alex", "response_text": "Complete", "consent": {"accepted": True, "policy_version": "2026-08-preview"}}).get_json()["submission"]
+        self.assertEqual(self.client.post(f"/api/submissions/{submission['id']}/review", headers=self.contract_admin_headers, json={"decision": "approved"}).status_code, 200)
         backing = self.client.get("/api/future-work-contracts").get_json()["backing"]
         self.assertEqual(backing["completed_work"], 10)
         self.assertEqual(backing["future_contracted_work"], 10)
@@ -111,7 +132,7 @@ class TestWorkPlatform(unittest.TestCase):
         self.assertEqual(self.client.post("/api/workers/Alex/advance", json={"amount_work": 10}).status_code, 201)
         created = self.submit_voice("Alex")
         submission_id = created.get_json()["submission"]["id"]
-        self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"})
+        self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"})
         self.assertEqual(worker_accounts["Alex"]["advance_debt_work"], 0)
         self.assertEqual(worker_accounts["Alex"]["earned_work"], 3)
         self.assertEqual(token_issuances[0]["amount_wwp"], 3)
