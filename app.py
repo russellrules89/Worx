@@ -23,6 +23,7 @@ tasks = [
 submissions = []
 ledger_entries = []
 token_issuances = []
+investor_interest_records = []
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
 
@@ -154,6 +155,21 @@ def worker_ledger():
     approved = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     pending = sum(item["final_reward_work"] for item in submissions if item["status"] == "pending_review")
     return jsonify(data_mode="demo", approved_voucher_credits=approved, pending_voucher_credits=pending, estimated_voucher_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not transfer USDC or issue corporate vouchers.")
+
+
+@app.post("/api/investor-interest")
+def register_investor_interest():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="A JSON request body is required"), 400
+    name = payload.get("name")
+    email = payload.get("email")
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
+        return jsonify(success=False, error="name must contain 1 to 80 characters"), 400
+    if not isinstance(email, str) or len(email.strip()) > 254 or "@" not in email:
+        return jsonify(success=False, error="a valid email address is required"), 400
+    investor_interest_records.append({"id": str(uuid4()), "name": name.strip(), "email": email.strip().lower(), "status": "interest_registered", "created_at": now()})
+    return jsonify(success=True, data_mode="demo", message="Interest registered. No funds, tokens, ownership rights, or investment commitments were accepted."), 201
 
 
 @app.get("/api/token")
