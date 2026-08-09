@@ -28,6 +28,15 @@ token_sale_requests = []
 investor_interest_records = []
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
+SYNTHETIC_ANNOTATION_EXAMPLES = [
+    ("Classify the message: ‘I cannot reset my password.’", "Account access"),
+    ("Classify the message: ‘My order arrived with a broken part.’", "Damaged order"),
+    ("Classify the message: ‘Where can I download my invoice?’", "Billing document"),
+]
+
+
+def synthetic_task_provenance(task):
+    return task.get("provenance", {"source": "client-provided", "synthetic": False})
 
 
 def now():
@@ -39,7 +48,8 @@ def configured_multiplier() -> Decimal:
 
 
 def public_task(task):
-    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usdc", "voucher_sponsor", "future_contract_id")}
+    fields = ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usdc", "voucher_sponsor", "future_contract_id")
+    return {**{key: task[key] for key in fields}, "provenance": synthetic_task_provenance(task)}
 
 
 def contract_volume_summary():
@@ -184,7 +194,60 @@ def create_upload_session():
 
 @app.get("/api/tasks")
 def list_tasks():
-    return jsonify(data_mode="demo", tasks=[public_task(task) for task in tasks])
+    return jsonify(data_mode="demo", tasks=[public_task(task) for task in tasks if task["status"] == "open"])
+
+
+@app.post("/api/synthetic-tasks")
+def generate_synthetic_task():
+    """Generate a review-only task with explicit provenance; no model output is paid by default."""
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    payload = request.get_json(silent=True) or {}
+    kind = payload.get("kind")
+    if kind not in {"annotation", "voice"}:
+        return jsonify(success=False, error="kind must be annotation or voice"), 400
+    if kind == "annotation":
+        prompt, expected_label = secrets.choice(SYNTHETIC_ANNOTATION_EXAMPLES)
+        title = "Synthetic support-message classification"
+        instructions = f"{prompt} Use the expected category schema. Reference label for reviewer: {expected_label}."
+    else:
+        prompt = secrets.choice(PROMPT_PHRASES)
+        title = "Synthetic voice-script review"
+        instructions = f"Review this synthetic voice script for clarity and safety before recording: ‘{prompt}’"
+    task = {
+        "id": str(uuid4()), "client_name": "Worx synthetic-data lab", "title": title,
+        "instructions": instructions, "reward_work": 0, "status": "draft_review",
+        "kind": kind, "required_submissions": 0, "submitted_count": 0, "funding_usdc": 0.0,
+        "voucher_sponsor": None, "future_contract_id": None, "created_at": now(),
+        "provenance": {"source": "template-generator", "synthetic": True, "generated_at": now(), "prompt": prompt, "human_review_required": True, "eligible_for_rewards": False},
+    }
+    tasks.insert(0, task)
+    return jsonify(success=True, data_mode="demo", task=public_task(task), note="Generated data is draft-only. An administrator must verify quality, rights, intended use, and contracted funding before publishing a reward-eligible task."), 201
+
+
+@app.post("/api/synthetic-tasks/<task_id>/publish")
+def publish_synthetic_task(task_id):
+    """Publish reviewed synthetic work only against an active contracted-work allocation."""
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    payload = request.get_json(silent=True) or {}
+    task = next((item for item in tasks if item["id"] == task_id and item.get("provenance", {}).get("synthetic")), None)
+    if task is None: return jsonify(success=False, error="Synthetic draft task not found"), 404
+    if task["status"] != "draft_review": return jsonify(success=False, error="Only draft synthetic tasks can be published"), 409
+    future_contract = next((item for item in future_work_contracts if item["id"] == payload.get("future_contract_id") and item["status"] == "contracted"), None)
+    try:
+        reward, quantity = int(payload.get("reward_work")), int(payload.get("required_submissions"))
+    except (TypeError, ValueError):
+        return jsonify(success=False, error="reward_work and required_submissions must be whole numbers"), 400
+    if future_contract is None or not 1 <= reward <= 1000 or not 1 <= quantity <= 100000:
+        return jsonify(success=False, error="An active future_contract_id and valid reward_work and required_submissions are required"), 400
+    allocation = reward * quantity
+    if allocation > future_contract["remaining_work"] - future_contract["allocated_work"]:
+        return jsonify(success=False, error="The future work contract has insufficient unallocated work volume"), 409
+    future_contract["allocated_work"] += allocation
+    task.update({"status": "open", "reward_work": reward, "required_submissions": quantity, "funding_usdc": float(Decimal(allocation) / Decimal("100")), "voucher_sponsor": future_contract["client_name"], "future_contract_id": future_contract["id"]})
+    task["provenance"].update({"human_review_required": False, "reviewed_at": now(), "eligible_for_rewards": True, "funding_reference": future_contract["contract_reference"]})
+    return jsonify(success=True, data_mode="demo", task=public_task(task), note="Published only after review and contracted-work allocation. Issuance remains testnet-only and subject to approved-submission validation."), 200
 
 
 @app.post("/api/client/tasks")

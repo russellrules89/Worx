@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import PlatformConfig, app, future_work_contracts, investor_interest_records, ledger_entries, settlement_status, submissions, token_issuances, token_sale_requests, worker_accounts
+from app import PlatformConfig, app, tasks, future_work_contracts, investor_interest_records, ledger_entries, settlement_status, submissions, token_issuances, token_sale_requests, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -16,6 +16,7 @@ class TestWorkPlatform(unittest.TestCase):
         token_sale_requests.clear()
         investor_interest_records.clear()
         worker_accounts.clear()
+        tasks[:] = [item for item in tasks if item["id"] in {"voice-brief-01", "label-brief-02"}]
 
     def submit_voice(self, worker="Alex"):
         return self.client.post("/api/submissions", json={
@@ -41,6 +42,26 @@ class TestWorkPlatform(unittest.TestCase):
 
     def test_portal_guide_rejects_empty_message(self):
         self.assertEqual(self.client.post("/api/assistant", json={"message": ""}).status_code, 400)
+
+    def test_synthetic_task_requires_admin_and_starts_as_unpaid_draft(self):
+        self.assertEqual(self.client.post("/api/synthetic-tasks", json={"kind": "voice"}).status_code, 403)
+        response = self.client.post("/api/synthetic-tasks", headers=self.contract_admin_headers, json={"kind": "voice"})
+        self.assertEqual(response.status_code, 201)
+        task = response.get_json()["task"]
+        self.assertEqual(task["status"], "draft_review")
+        self.assertEqual(task["reward_work"], 0)
+        self.assertTrue(task["provenance"]["synthetic"])
+        self.assertFalse(task["provenance"]["eligible_for_rewards"])
+
+    def test_reviewed_synthetic_task_requires_contracted_allocation_before_publish(self):
+        draft = self.client.post("/api/synthetic-tasks", headers=self.contract_admin_headers, json={"kind": "annotation"}).get_json()["task"]
+        self.assertEqual(self.client.post(f"/api/synthetic-tasks/{draft['id']}/publish", headers=self.contract_admin_headers, json={"reward_work": 5, "required_submissions": 2}).status_code, 400)
+        contract = self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json={"contract_reference": "SYN-2026-01", "client_name": "Dataset Client", "committed_work": 20}).get_json()["contract"]
+        response = self.client.post(f"/api/synthetic-tasks/{draft['id']}/publish", headers=self.contract_admin_headers, json={"future_contract_id": contract["id"], "reward_work": 5, "required_submissions": 2})
+        self.assertEqual(response.status_code, 200)
+        task = response.get_json()["task"]
+        self.assertEqual(task["status"], "open")
+        self.assertTrue(task["provenance"]["eligible_for_rewards"])
 
     def test_health_endpoint_response(self):
         self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
