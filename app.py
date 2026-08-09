@@ -17,12 +17,13 @@ STRIPE_WEBHOOK_SECRET = PlatformConfig.STRIPE_WEBHOOK_SECRET
 # In-memory demo only: use authenticated roles, a durable database, consent records,
 # private object storage, and a regulated payout partner before production.
 tasks = [
-    {"id": "voice-brief-01", "client_name": "Northstar Labs", "title": "Localized product phrase", "instructions": "Read the generated phrase naturally in a quiet setting.", "reward_work": 12, "status": "open", "kind": "voice", "required_submissions": 100, "submitted_count": 0, "funding_usdc": 12.00, "voucher_sponsor": "Northstar Labs"},
-    {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usdc": 3.00, "voucher_sponsor": "Northstar Labs"},
+    {"id": "voice-brief-01", "client_name": "Northstar Labs", "title": "Localized product phrase", "instructions": "Read the generated phrase naturally in a quiet setting.", "reward_work": 12, "status": "open", "kind": "voice", "required_submissions": 100, "submitted_count": 0, "funding_usdc": 12.00, "voucher_sponsor": "Northstar Labs", "future_contract_id": None},
+    {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usdc": 3.00, "voucher_sponsor": "Northstar Labs", "future_contract_id": None},
 ]
 submissions = []
 ledger_entries = []
 token_issuances = []
+future_work_contracts = []
 investor_interest_records = []
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
@@ -37,11 +38,24 @@ def configured_multiplier() -> Decimal:
 
 
 def public_task(task):
-    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usdc", "voucher_sponsor")}
+    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usdc", "voucher_sponsor", "future_contract_id")}
+
+
+def contract_volume_summary():
+    contracted = sum(contract["remaining_work"] for contract in future_work_contracts if contract["status"] == "contracted")
+    completed = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
+    issued = sum(item["amount_wwp"] for item in token_issuances)
+    return {"completed_work": completed, "future_contracted_work": contracted, "maximum_backed_wwp": completed + contracted, "issued_wwp": issued, "unissued_backing_wwp": completed + contracted - issued}
 
 
 def get_worker(worker_name):
     return worker_accounts.setdefault(worker_name, {"earned_work": 0, "advance_debt_work": 0, "has_active_advance": False})
+
+
+def contract_admin_authorized():
+    expected_key = app.config.get("CONTRACT_ADMIN_API_KEY", "")
+    supplied_key = request.headers.get("X-Contract-Admin-Key", "")
+    return bool(expected_key) and secrets.compare_digest(supplied_key, expected_key)
 
 
 @app.get("/")
@@ -74,11 +88,76 @@ def create_client_task():
         return jsonify(success=False, error="reward_work and required_submissions must be whole numbers"), 400
     if not 1 <= reward <= 1000 or not 1 <= quantity <= 100000:
         return jsonify(success=False, error="reward_work or required_submissions is outside the demo limit"), 400
+    future_contract_id = payload.get("future_contract_id")
+    future_contract = None
+    if future_contract_id:
+        if not contract_admin_authorized():
+            return jsonify(success=False, error="Contract administrator authorization is required to allocate contracted work"), 403
+        future_contract = next((item for item in future_work_contracts if item["id"] == future_contract_id and item["status"] == "contracted"), None)
+        if future_contract is None:
+            return jsonify(success=False, error="future_contract_id must reference an active future work contract"), 400
+        requested_work = reward * quantity
+        available_work = future_contract["remaining_work"] - future_contract["allocated_work"]
+        if requested_work > available_work:
+            return jsonify(success=False, error="The future work contract has insufficient unallocated work volume"), 409
     # Demo accounting only: 60% corporate-voucher pool / 40% owner USDC reserve.
     funding = (Decimal(reward) * Decimal(quantity) / Decimal("100"))
-    task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "funding_usdc": float(funding), "voucher_sponsor": payload["client_name"].strip()[:80], "created_at": now()}
+    task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "funding_usdc": float(funding), "voucher_sponsor": payload["client_name"].strip()[:80], "future_contract_id": future_contract_id, "created_at": now()}
+    if future_contract is not None:
+        future_contract["allocated_work"] += reward * quantity
     tasks.insert(0, task)
     return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"client_contract_usdc": float(funding), "worker_voucher_pool_usdc_equivalent": float(funding * Decimal("0.60")), "owner_usdc_reserve": float(funding * Decimal("0.40")), "usdc_transfer_created": False, "voucher_issued": False}), 201
+
+
+@app.post("/api/future-work-contracts")
+def register_future_work_contract():
+    """Registers enforceable future work capacity for the testnet backing ledger.
+
+    Production must restrict this route to an authorized contract administrator and
+    retain the signed agreement outside the public API.
+    """
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    payload = request.get_json(silent=True)
+    required = ("contract_reference", "client_name", "committed_work")
+    if not isinstance(payload, dict) or any(not payload.get(key) for key in required):
+        return jsonify(success=False, error="contract_reference, client_name, and committed_work are required"), 400
+    try:
+        committed_work = int(payload["committed_work"])
+    except (TypeError, ValueError):
+        return jsonify(success=False, error="committed_work must be a whole number"), 400
+    if not 1 <= committed_work <= 1000000:
+        return jsonify(success=False, error="committed_work is outside the demo limit"), 400
+    contract_reference = str(payload["contract_reference"]).strip()
+    if not 1 <= len(contract_reference) <= 120:
+        return jsonify(success=False, error="contract_reference must contain 1 to 120 characters"), 400
+    if any(item["contract_reference"] == contract_reference for item in future_work_contracts):
+        return jsonify(success=False, error="contract_reference has already been registered"), 409
+    contract = {"id": str(uuid4()), "contract_reference": contract_reference, "client_name": str(payload["client_name"]).strip()[:80], "committed_work": committed_work, "remaining_work": committed_work, "allocated_work": 0, "status": "contracted", "created_at": now(), "expires_at": payload.get("expires_at")}
+    future_work_contracts.insert(0, contract)
+    return jsonify(success=True, data_mode="demo", contract=contract, backing=contract_volume_summary(), note="A signed agreement, client funding verification, administrator authorization, and durable storage are required before production use."), 201
+
+
+@app.post("/api/future-work-contracts/<contract_id>/cancel")
+def cancel_future_work_contract(contract_id):
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    contract = next((item for item in future_work_contracts if item["id"] == contract_id), None)
+    if contract is None:
+        return jsonify(success=False, error="Future work contract not found"), 404
+    if contract["status"] != "contracted":
+        return jsonify(success=False, error="Only active future work contracts can be cancelled"), 409
+    if contract["allocated_work"]:
+        return jsonify(success=False, error="A future work contract with allocated tasks cannot be cancelled"), 409
+    if token_issuances and sum(item["amount_wwp"] for item in token_issuances) > contract_volume_summary()["completed_work"]:
+        return jsonify(success=False, error="Cancellation would leave issued tokens above approved-work backing"), 409
+    contract["status"] = "cancelled"; contract["cancelled_at"] = now()
+    return jsonify(success=True, data_mode="demo", contract=contract, backing=contract_volume_summary(), note="Cancellation removes only unfulfilled future capacity; it never changes approved-work records or past token issuance."), 200
+
+
+@app.get("/api/future-work-contracts")
+def list_future_work_contracts():
+    return jsonify(data_mode="demo", contracts=future_work_contracts, backing=contract_volume_summary())
 
 
 @app.get("/api/tasks/<task_id>/prompt")
@@ -133,6 +212,13 @@ def review_submission(submission_id):
     submission["status"] = payload["decision"]; submission["reviewed_at"] = now()
     if payload["decision"] == "approved":
         account = get_worker(submission["worker_name"]); reward = submission["final_reward_work"]
+        task = next(item for item in tasks if item["id"] == submission["task_id"])
+        if task["future_contract_id"]:
+            future_contract = next((item for item in future_work_contracts if item["id"] == task["future_contract_id"] and item["status"] == "contracted"), None)
+            if future_contract is None or future_contract["allocated_work"] < reward or future_contract["remaining_work"] < reward:
+                return jsonify(success=False, error="The linked future work contract cannot support this approval"), 409
+            future_contract["allocated_work"] -= reward
+            future_contract["remaining_work"] -= reward
         debt_paid = min(reward, account["advance_debt_work"]); account["advance_debt_work"] -= debt_paid; account["has_active_advance"] = account["advance_debt_work"] > 0; account["earned_work"] += reward - debt_paid
         ledger_entries.insert(0, {"id": str(uuid4()), "worker_name": submission["worker_name"], "submission_id": submission_id, "type": "approved_work", "credit_work": reward, "debt_repayment_work": debt_paid, "created_at": now()})
         if reward > debt_paid:
@@ -174,7 +260,7 @@ def register_investor_interest():
 
 @app.get("/api/token")
 def work_proof_token():
-    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, issuance_basis="one WWP per approved work credit", issuance=token_issuances, note="Testnet prototype only. No token contract is deployed, minted, transferable, or redeemable by this application.")
+    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, issuance_basis="one WWP per approved work credit; aggregate supply must not exceed approved work plus active contracted future work", issuance=token_issuances, backing=contract_volume_summary(), note="Testnet prototype only. No token contract is deployed, minted, transferable, or redeemable by this application.")
 
 
 @app.get("/api/owner/balance")

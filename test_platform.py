@@ -1,16 +1,18 @@
 import unittest
 from unittest.mock import patch
 
-from app import app, investor_interest_records, ledger_entries, submissions, token_issuances, worker_accounts
+from app import app, future_work_contracts, investor_interest_records, ledger_entries, submissions, token_issuances, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
     def setUp(self):
-        app.config.update(TESTING=True)
+        app.config.update(TESTING=True, CONTRACT_ADMIN_API_KEY="test-contract-admin")
         self.client = app.test_client()
+        self.contract_admin_headers = {"X-Contract-Admin-Key": "test-contract-admin"}
         submissions.clear()
         ledger_entries.clear()
         token_issuances.clear()
+        future_work_contracts.clear()
         investor_interest_records.clear()
         worker_accounts.clear()
 
@@ -51,6 +53,47 @@ class TestWorkPlatform(unittest.TestCase):
         token = self.client.get("/api/token").get_json()
         self.assertEqual(token["network"], "not_deployed")
         self.assertEqual(token["issuance"][0]["amount_wwp"], 12)
+
+    def test_future_contract_registration_requires_contract_admin_authorization(self):
+        response = self.client.post("/api/future-work-contracts", json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 500})
+        self.assertEqual(response.status_code, 403)
+
+    def test_future_contract_adds_unissued_backing_capacity(self):
+        response = self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 500})
+        self.assertEqual(response.status_code, 201)
+        backing = response.get_json()["backing"]
+        self.assertEqual(backing["future_contracted_work"], 500)
+        self.assertEqual(backing["maximum_backed_wwp"], 500)
+        self.assertEqual(backing["unissued_backing_wwp"], 500)
+
+    def test_contracted_task_cannot_exceed_unallocated_contract_volume(self):
+        contract = self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 20}).get_json()["contract"]
+        payload = {"client_name": "Northstar Labs", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 3, "future_contract_id": contract["id"]}
+        self.assertEqual(self.client.post("/api/client/tasks", headers=self.contract_admin_headers, json=payload).status_code, 409)
+
+    def test_contract_backing_moves_to_completed_work_after_approval(self):
+        contract = self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 20}).get_json()["contract"]
+        task = self.client.post("/api/client/tasks", headers=self.contract_admin_headers, json={"client_name": "Northstar Labs", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 2, "future_contract_id": contract["id"]}).get_json()["task"]
+        submission = self.client.post("/api/submissions", json={"task_id": task["id"], "worker_name": "Alex", "response_text": "Complete"}).get_json()["submission"]
+        self.assertEqual(self.client.post(f"/api/submissions/{submission['id']}/review", json={"decision": "approved"}).status_code, 200)
+        backing = self.client.get("/api/future-work-contracts").get_json()["backing"]
+        self.assertEqual(backing["completed_work"], 10)
+        self.assertEqual(backing["future_contracted_work"], 10)
+        self.assertEqual(backing["maximum_backed_wwp"], 20)
+
+    def test_future_contract_reference_cannot_be_registered_twice(self):
+        payload = {"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 500}
+        self.assertEqual(self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json=payload).status_code, 201)
+        self.assertEqual(self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json=payload).status_code, 409)
+
+    def test_cancelling_future_contract_removes_only_future_capacity(self):
+        created = self.client.post("/api/future-work-contracts", headers=self.contract_admin_headers, json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 500})
+        contract_id = created.get_json()["contract"]["id"]
+        response = self.client.post(f"/api/future-work-contracts/{contract_id}/cancel", headers=self.contract_admin_headers)
+        self.assertEqual(response.status_code, 200)
+        backing = response.get_json()["backing"]
+        self.assertEqual(backing["future_contracted_work"], 0)
+        self.assertEqual(backing["maximum_backed_wwp"], 0)
 
     def test_demo_advance_is_repaid_before_earned_work(self):
         self.assertEqual(self.client.post("/api/workers/Alex/advance", json={"amount_work": 10}).status_code, 201)
