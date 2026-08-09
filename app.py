@@ -77,6 +77,20 @@ def system_health():
     return jsonify(status="ok", service="worx"), 200
 
 
+@app.get("/api/worker/overview")
+def worker_overview():
+    """Preview-only portal summary; no work, reward, or settlement is processed."""
+    return jsonify(
+        data_mode="preview",
+        contributions=[
+            {"id": "sample-001", "type": "Audio annotation", "status": "Awaiting validation", "reward": "Not calculated"},
+            {"id": "sample-002", "type": "Data annotation", "status": "Ready to contribute", "reward": "Not calculated"},
+        ],
+        reward_policy="Rewards are only calculated after server-side validation and remain off-chain until a configured testnet settlement process is approved.",
+        settlement={"enabled": False, "network": None, "contract": None},
+    )
+
+
 @app.get("/api/tasks")
 def list_tasks():
     return jsonify(data_mode="demo", tasks=[public_task(task) for task in tasks])

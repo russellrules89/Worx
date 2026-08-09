@@ -116,6 +116,13 @@ class TestWorkPlatform(unittest.TestCase):
         self.assertEqual(worker_accounts["Alex"]["earned_work"], 3)
         self.assertEqual(token_issuances[0]["amount_wwp"], 3)
 
+    def test_worker_overview_is_preview_only(self):
+        response = self.client.get("/api/worker/overview")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["data_mode"], "preview")
+        self.assertFalse(data["settlement"]["enabled"])
+
     def test_webhook_is_unavailable_without_a_secret(self):
         with patch("app.STRIPE_WEBHOOK_SECRET", ""):
             self.assertEqual(self.client.post("/api/stripe/webhook").status_code, 503)
