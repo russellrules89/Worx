@@ -24,6 +24,8 @@ class PlatformConfig:
     EVM_TESTNET_CHAIN_ID = os.environ.get("EVM_TESTNET_CHAIN_ID", "")
     EVM_NETWORK_NAME = os.environ.get("EVM_NETWORK_NAME", "")
     MINIMUM_CASHOUT_WORK = os.environ.get("MINIMUM_CASHOUT_WORK", "100")
+    AI_GATEWAY_API_KEY = os.environ.get("AI_GATEWAY_API_KEY", "")
+    AI_GATEWAY_MODEL = os.environ.get("AI_GATEWAY_MODEL", "")
 
     @staticmethod
     def payout_multiplier() -> Decimal:
