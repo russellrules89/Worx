@@ -33,6 +33,15 @@ class TestWorkPlatform(unittest.TestCase):
             self.assertTrue(status["enabled"])
             self.assertFalse(status["cashout"]["available"])
 
+    def test_portal_guide_answers_reward_question(self):
+        response = self.client.post("/api/assistant", json={"message": "How do rewards work?"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["action"], "tasks")
+        self.assertIn("server-side review", response.get_json()["reply"])
+
+    def test_portal_guide_rejects_empty_message(self):
+        self.assertEqual(self.client.post("/api/assistant", json={"message": ""}).status_code, 400)
+
     def test_health_endpoint_response(self):
         self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
 

@@ -22,6 +22,10 @@
         Contribution consent is required. Rewards are recorded only after server-side review. ERC-20 testnet settlement requires a deployed contract and isolated oracle; ERC-20 transfers are not fiat cash-out. Do not submit personal, sensitive, or copyrighted material.
       </section>
 
+      <section class="rounded-xl border border-cyan-900 bg-cyan-950/30 p-4 text-sm text-cyan-50">
+        <strong>Getting started:</strong> 1. Review consent. 2. Choose a task. 3. Submit only requested data. 4. Track review status. Rewards are recorded after review.
+      </section>
+
       <section class="grid gap-4 md:grid-cols-4" aria-label="Workflow readiness">
         <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Consent</p><p id="consent-status" class="mt-2 font-semibold text-emerald-400">Required</p></article>
         <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Uploads</p><p id="upload-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
@@ -83,6 +87,23 @@
         <div class="flex items-center justify-between"><h2 class="text-lg font-semibold">Contribution queue</h2><span class="text-sm text-slate-400">Preview records</span></div>
         <div id="queue" class="mt-4 space-y-3"><p class="text-sm text-slate-400">Loading contribution state.</p></div>
       </section>
+
+      <section id="portal-guide" class="rounded-xl border border-cyan-900 bg-slate-900 p-6" aria-labelledby="guide-title">
+        <p class="text-sm font-semibold text-cyan-400">Portal guide</p>
+        <h2 id="guide-title" class="mt-1 text-lg font-semibold">Ask for help navigating Worx</h2>
+        <p class="mt-2 text-sm text-slate-300">Get help with tasks, consent, wallet connection, rewards, and testnet settlement. Do not enter wallet recovery phrases, passwords, or sensitive contribution data.</p>
+        <div class="mt-4 flex flex-wrap gap-2" aria-label="Suggested questions">
+          <button data-guide-question="How do rewards work?" class="guide-question rounded-full border border-slate-700 px-3 py-1 text-sm hover:border-cyan-400">How do rewards work?</button>
+          <button data-guide-question="How do I connect my wallet?" class="guide-question rounded-full border border-slate-700 px-3 py-1 text-sm hover:border-cyan-400">Connect wallet</button>
+          <button data-guide-question="Can I cash out?" class="guide-question rounded-full border border-slate-700 px-3 py-1 text-sm hover:border-cyan-400">Cash-out status</button>
+        </div>
+        <form id="guide-form" class="mt-4 flex gap-2">
+          <label class="sr-only" for="guide-message">Ask the portal guide</label>
+          <input id="guide-message" maxlength="500" required class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="Ask a portal question" />
+          <button class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300">Ask</button>
+        </form>
+        <p id="guide-reply" class="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300" aria-live="polite">I can help you get started.</p>
+      </section>
     </main>
 
     <script>
@@ -132,6 +153,26 @@
           document.querySelector('#task-status').textContent = `${button.dataset.task} is not accepting submissions in this preview.`;
         });
       });
+
+      async function askGuide(message) {
+        const reply = document.querySelector('#guide-reply');
+        reply.textContent = 'Finding the right next step…';
+        try {
+          const response = await fetch('/api/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message }) });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Guide unavailable');
+          reply.textContent = data.reply;
+          if (data.action === 'wallet') document.querySelector('#wallet-button').focus();
+          if (data.action === 'tasks') document.querySelector('.task-button').focus();
+        } catch (error) { reply.textContent = error.message || 'The guide is unavailable. Please try again.'; }
+      }
+
+      document.querySelector('#guide-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const input = document.querySelector('#guide-message');
+        askGuide(input.value); input.value = '';
+      });
+      document.querySelectorAll('.guide-question').forEach((button) => button.addEventListener('click', () => askGuide(button.dataset.guideQuestion)));
 
       document.querySelector('#wallet-button').addEventListener('click', async () => {
         if (!window.ethereum) { document.querySelector('#wallet-button').textContent = 'No wallet detected'; return; }

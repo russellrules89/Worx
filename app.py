@@ -127,6 +127,56 @@ def worker_onboarding():
     )
 
 
+@app.post("/api/assistant")
+def portal_assistant():
+    """Provide scoped navigation help; model access is optional and never receives contribution files."""
+    payload = request.get_json(silent=True)
+    message = payload.get("message", "") if isinstance(payload, dict) else ""
+    if not isinstance(message, str) or not message.strip() or len(message.strip()) > 500:
+        return jsonify(success=False, error="message must contain 1 to 500 characters"), 400
+
+    settlement = settlement_status()
+    gateway_key = PlatformConfig.AI_GATEWAY_API_KEY or os.environ.get("VERCEL_OIDC_TOKEN", "")
+    if gateway_key and PlatformConfig.AI_GATEWAY_MODEL:
+        try:
+            from openai import OpenAI
+            system_prompt = """You are the Worx portal guide. Help contributors navigate only this portal: tasks, consent, wallet connection, rewards, and testnet settlement. Be concise and accurate. Never ask for recovery phrases, passwords, private keys, identity documents, or contribution content. Do not promise payments or cash-out. ERC-20 transfers are not fiat cash-out; any redemption requires a compliant provider. If a feature is unavailable, state that plainly and point to the next available step."""
+            context = f"Current portal state: uploads={False}; identity_verification={False}; settlement_enabled={settlement['enabled']}; network={settlement['network']}; cashout_available={settlement['cashout']['available']}."
+            client = OpenAI(api_key=gateway_key, base_url="https://ai-gateway.vercel.sh/v1")
+            completion = client.chat.completions.create(
+                model=PlatformConfig.AI_GATEWAY_MODEL,
+                messages=[{"role": "system", "content": system_prompt}, {"role": "system", "content": context}, {"role": "user", "content": message.strip()}],
+                max_tokens=180,
+            )
+            reply = completion.choices[0].message.content
+            if reply:
+                return jsonify(success=True, assistant="Worx AI guide", mode="ai", reply=reply, action="help", settlement=settlement)
+        except Exception:
+            # Preserve basic navigation when the optional model integration is unavailable.
+            pass
+
+    text = message.lower()
+    if any(term in text for term in ("wallet", "connect", "metamask")):
+        reply = "Use Connect wallet in the header, then approve the connection in your wallet. Connecting a wallet does not create a payment or cash-out."
+        action = "wallet"
+    elif any(term in text for term in ("earn", "reward", "paid", "payment")):
+        reply = "Choose a contribution, accept the current consent terms, and submit it. Rewards are recorded only after server-side review; pending work is not earned work."
+        action = "tasks"
+    elif any(term in text for term in ("cash", "withdraw", "redeem", "erc", "crypto", "token")):
+        reply = settlement["cashout"]["reason"]
+        action = "settlement"
+    elif any(term in text for term in ("voice", "record", "audio")):
+        reply = "Voice contributions require consent and server-side quality checks. The current preview does not accept audio uploads."
+        action = "tasks"
+    elif any(term in text for term in ("consent", "privacy", "data")):
+        reply = "Only submit data requested by the task. Current consent is required, and uploads remain unavailable until private storage, scanning, and retention controls are configured."
+        action = "consent"
+    else:
+        reply = "I can help you find tasks, explain consent, connect a wallet, understand rewards, or check settlement status. Try: ‘How do rewards work?’"
+        action = "help"
+    return jsonify(success=True, assistant="Worx guide", mode="guided", reply=reply, action=action, settlement=settlement)
+
+
 @app.post("/api/uploads/session")
 def create_upload_session():
     return jsonify(success=False, error="Uploads are not configured. Set up private storage, scanning, retention, and consent controls before accepting files."), 503
