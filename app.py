@@ -17,8 +17,8 @@ STRIPE_WEBHOOK_SECRET = PlatformConfig.STRIPE_WEBHOOK_SECRET
 # In-memory demo only: use authenticated roles, a durable database, consent records,
 # private object storage, and a regulated payout partner before production.
 tasks = [
-    {"id": "voice-brief-01", "client_name": "Northstar Labs", "title": "Localized product phrase", "instructions": "Read the generated phrase naturally in a quiet setting.", "reward_work": 12, "status": "open", "kind": "voice", "required_submissions": 100, "submitted_count": 0, "funding_usd": 12.00},
-    {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usd": 3.00},
+    {"id": "voice-brief-01", "client_name": "Northstar Labs", "title": "Localized product phrase", "instructions": "Read the generated phrase naturally in a quiet setting.", "reward_work": 12, "status": "open", "kind": "voice", "required_submissions": 100, "submitted_count": 0, "funding_usdc": 12.00, "voucher_sponsor": "Northstar Labs"},
+    {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usdc": 3.00, "voucher_sponsor": "Northstar Labs"},
 ]
 submissions = []
 ledger_entries = []
@@ -35,7 +35,7 @@ def configured_multiplier() -> Decimal:
 
 
 def public_task(task):
-    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usd")}
+    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usdc", "voucher_sponsor")}
 
 
 def get_worker(worker_name):
@@ -72,11 +72,11 @@ def create_client_task():
         return jsonify(success=False, error="reward_work and required_submissions must be whole numbers"), 400
     if not 1 <= reward <= 1000 or not 1 <= quantity <= 100000:
         return jsonify(success=False, error="reward_work or required_submissions is outside the demo limit"), 400
-    # Demo allocation: 60% worker pool / 40% platform reserve, no Stripe charge occurs.
+    # Demo accounting only: 60% corporate-voucher pool / 40% owner USDC reserve.
     funding = (Decimal(reward) * Decimal(quantity) / Decimal("100"))
-    task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "funding_usd": float(funding), "created_at": now()}
+    task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "funding_usdc": float(funding), "voucher_sponsor": payload["client_name"].strip()[:80], "created_at": now()}
     tasks.insert(0, task)
-    return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"client_contract_usd": float(funding), "worker_pool_usd": float(funding * Decimal("0.60")), "platform_reserve_usd": float(funding * Decimal("0.40")), "stripe_charge_created": False}), 201
+    return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"client_contract_usdc": float(funding), "worker_voucher_pool_usdc_equivalent": float(funding * Decimal("0.60")), "owner_usdc_reserve": float(funding * Decimal("0.40")), "usdc_transfer_created": False, "voucher_issued": False}), 201
 
 
 @app.get("/api/tasks/<task_id>/prompt")
@@ -150,13 +150,13 @@ def request_demo_advance(worker_name):
 def worker_ledger():
     approved = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     pending = sum(item["final_reward_work"] for item in submissions if item["status"] == "pending_review")
-    return jsonify(data_mode="demo", approved_work=approved, pending_work=pending, estimated_voucher_value_usd=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not issue tokens, vouchers, or payments.")
+    return jsonify(data_mode="demo", approved_voucher_credits=approved, pending_voucher_credits=pending, estimated_voucher_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not transfer USDC or issue corporate vouchers.")
 
 
 @app.get("/api/owner/balance")
 def corporate_balance_sheet():
-    funding = sum(Decimal(str(item["funding_usd"])) for item in tasks)
-    return jsonify(data_mode="demo", client_contract_value_usd=float(funding), worker_pool_allocation_usd=float(funding * Decimal("0.60")), platform_reserve_usd=float(funding * Decimal("0.40")), stripe_payments_received=False)
+    funding = sum(Decimal(str(item["funding_usdc"])) for item in tasks)
+    return jsonify(data_mode="demo", client_contract_value_usdc=float(funding), worker_voucher_pool_usdc_equivalent=float(funding * Decimal("0.60")), owner_usdc_reserve=float(funding * Decimal("0.40")), usdc_transfers_received=False)
 
 
 @app.post("/api/stripe/webhook")

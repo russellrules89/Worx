@@ -24,8 +24,9 @@ class TestWorkPlatform(unittest.TestCase):
     def test_client_can_create_demo_task_with_allocation(self):
         response = self.client.post("/api/client/tasks", json={"client_name": "Client", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 100})
         self.assertEqual(response.status_code, 201)
-        self.assertFalse(response.get_json()["allocation"]["stripe_charge_created"])
-        self.assertEqual(response.get_json()["allocation"]["worker_pool_usd"], 6.0)
+        self.assertFalse(response.get_json()["allocation"]["usdc_transfer_created"])
+        self.assertFalse(response.get_json()["allocation"]["voucher_issued"])
+        self.assertEqual(response.get_json()["allocation"]["worker_voucher_pool_usdc_equivalent"], 6.0)
 
     def test_voice_submission_rejects_failed_demo_quality_gate(self):
         response = self.client.post("/api/submissions", json={"task_id": "voice-brief-01", "worker_name": "Alex", "response_text": "Test", "duration_seconds": 1, "has_mobile_metadata": False, "estimated_snr_db": 10})
@@ -37,7 +38,7 @@ class TestWorkPlatform(unittest.TestCase):
         submission_id = created.get_json()["submission"]["id"]
         self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"}).status_code, 200)
         ledger = self.client.get("/api/ledger").get_json()
-        self.assertEqual(ledger["approved_work"], 12)
+        self.assertEqual(ledger["approved_voucher_credits"], 12)
         self.assertEqual(len(ledger["entries"]), 1)
 
     def test_demo_advance_is_repaid_before_earned_work(self):
