@@ -14,6 +14,7 @@ class PlatformConfig:
     STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     ETHEREUM_CONTRACT_ADDRESS = os.environ.get("ETHEREUM_CONTRACT_ADDRESS", "")
     CONTRACT_ADMIN_API_KEY = os.environ.get("CONTRACT_ADMIN_API_KEY", "")
+    TOKEN_SALE_ENABLED = os.environ.get("TOKEN_SALE_ENABLED", "false").lower() == "true"
 
     @staticmethod
     def payout_multiplier() -> Decimal:

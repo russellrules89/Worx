@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import app, future_work_contracts, investor_interest_records, ledger_entries, submissions, token_issuances, worker_accounts
+from app import app, future_work_contracts, investor_interest_records, ledger_entries, submissions, token_issuances, token_sale_requests, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -13,6 +13,7 @@ class TestWorkPlatform(unittest.TestCase):
         ledger_entries.clear()
         token_issuances.clear()
         future_work_contracts.clear()
+        token_sale_requests.clear()
         investor_interest_records.clear()
         worker_accounts.clear()
 
@@ -28,9 +29,9 @@ class TestWorkPlatform(unittest.TestCase):
     def test_client_can_create_demo_task_with_allocation(self):
         response = self.client.post("/api/client/tasks", json={"client_name": "Client", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 100})
         self.assertEqual(response.status_code, 201)
-        self.assertFalse(response.get_json()["allocation"]["usdc_transfer_created"])
-        self.assertFalse(response.get_json()["allocation"]["voucher_issued"])
-        self.assertEqual(response.get_json()["allocation"]["worker_voucher_pool_usdc_equivalent"], 6.0)
+        self.assertFalse(response.get_json()["allocation"]["token_contract_deployed"])
+        self.assertFalse(response.get_json()["allocation"]["on_chain_payment_created"])
+        self.assertEqual(response.get_json()["allocation"]["worker_wwp_payment_capacity"], 1000)
 
     def test_investor_interest_never_accepts_an_investment(self):
         response = self.client.post("/api/investor-interest", json={"name": "Jordan", "email": "jordan@example.com"})
@@ -48,11 +49,22 @@ class TestWorkPlatform(unittest.TestCase):
         submission_id = created.get_json()["submission"]["id"]
         self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"}).status_code, 200)
         ledger = self.client.get("/api/ledger").get_json()
-        self.assertEqual(ledger["approved_voucher_credits"], 12)
+        self.assertEqual(ledger["approved_wwp_payment_work"], 12)
         self.assertEqual(len(ledger["entries"]), 1)
         token = self.client.get("/api/token").get_json()
         self.assertEqual(token["network"], "not_deployed")
-        self.assertEqual(token["issuance"][0]["amount_wwp"], 12)
+        self.assertEqual(token["pending_payments"][0]["amount_wwp"], 12)
+
+    def test_token_distribution_records_public_sector_interest_without_sale(self):
+        response = self.client.post("/api/token/distribution-requests", json={"purchaser_type": "public_sector", "organization_name": "City Data Office", "contact_email": "buyer@example.gov"})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["request"]["status"], "compliance_review_required")
+        self.assertFalse(response.get_json()["distribution"]["enabled"])
+        self.assertEqual(len(token_sale_requests), 1)
+
+    def test_token_distribution_rejects_unknown_purchaser_type(self):
+        response = self.client.post("/api/token/distribution-requests", json={"purchaser_type": "consumer", "organization_name": "Buyer", "contact_email": "buyer@example.com"})
+        self.assertEqual(response.status_code, 400)
 
     def test_future_contract_registration_requires_contract_admin_authorization(self):
         response = self.client.post("/api/future-work-contracts", json={"contract_reference": "MSA-2026-01", "client_name": "Northstar Labs", "committed_work": 500})

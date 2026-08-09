@@ -24,6 +24,7 @@ submissions = []
 ledger_entries = []
 token_issuances = []
 future_work_contracts = []
+token_sale_requests = []
 investor_interest_records = []
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
@@ -50,6 +51,14 @@ def contract_volume_summary():
 
 def get_worker(worker_name):
     return worker_accounts.setdefault(worker_name, {"earned_work": 0, "advance_debt_work": 0, "has_active_advance": False})
+
+
+def valid_wallet_address(value):
+    return isinstance(value, str) and len(value) == 42 and value.startswith("0x") and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+
+
+def token_sale_status():
+    return {"enabled": False, "launch_gate_configured": PlatformConfig.TOKEN_SALE_ENABLED, "asset": "WWP", "network": "not_deployed", "purchaser_categories": ["public_sector", "private_sector"], "payment_processing": False, "note": "Sales remain disabled: setting the launch gate alone cannot enable a sale. Legal, KYC/AML, tax, custody, sanctions, jurisdictional controls, payment processing, and a deployed contract are required."}
 
 
 def contract_admin_authorized():
@@ -100,13 +109,13 @@ def create_client_task():
         available_work = future_contract["remaining_work"] - future_contract["allocated_work"]
         if requested_work > available_work:
             return jsonify(success=False, error="The future work contract has insufficient unallocated work volume"), 409
-    # Demo accounting only: 60% corporate-voucher pool / 40% owner USDC reserve.
+    # Demo accounting only: prospective WWP work-payment capacity / owner USDC reserve.
     funding = (Decimal(reward) * Decimal(quantity) / Decimal("100"))
     task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "funding_usdc": float(funding), "voucher_sponsor": payload["client_name"].strip()[:80], "future_contract_id": future_contract_id, "created_at": now()}
     if future_contract is not None:
         future_contract["allocated_work"] += reward * quantity
     tasks.insert(0, task)
-    return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"client_contract_usdc": float(funding), "worker_voucher_pool_usdc_equivalent": float(funding * Decimal("0.60")), "owner_usdc_reserve": float(funding * Decimal("0.40")), "usdc_transfer_created": False, "voucher_issued": False}), 201
+    return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"client_contract_usdc": float(funding), "worker_wwp_payment_capacity": reward * quantity, "owner_usdc_reserve": float(funding * Decimal("0.40")), "on_chain_payment_created": False, "token_contract_deployed": False}), 201
 
 
 @app.post("/api/future-work-contracts")
@@ -180,9 +189,11 @@ def create_submission():
         return jsonify(success=False, error="A JSON request body is required"), 400
     task = next((item for item in tasks if item["id"] == payload.get("task_id") and item["status"] == "open"), None)
     worker_name = payload.get("worker_name")
+    wallet_address = payload.get("wallet_address")
     response_text = payload.get("response_text")
     if task is None: return jsonify(success=False, error="Choose an available task"), 400
     if not isinstance(worker_name, str) or not worker_name.strip(): return jsonify(success=False, error="worker_name is required"), 400
+    if wallet_address is not None and not valid_wallet_address(wallet_address): return jsonify(success=False, error="wallet_address must be a valid EVM address when provided"), 400
     if not isinstance(response_text, str) or not response_text.strip() or len(response_text.strip()) > 2000: return jsonify(success=False, error="response_text must contain 1 to 2,000 characters"), 400
     quality = {"status": "not_required", "checks": []}
     if task["kind"] == "voice":
@@ -197,7 +208,7 @@ def create_submission():
     account = get_worker(worker_name.strip())
     multiplier = configured_multiplier() if account["has_active_advance"] else Decimal("1.00")
     final_reward = int(Decimal(task["reward_work"]) * multiplier)
-    submission = {"id": str(uuid4()), "task_id": task["id"], "task_title": task["title"], "worker_name": worker_name.strip(), "response_text": response_text.strip(), "reward_work": task["reward_work"], "multiplier": float(multiplier), "final_reward_work": final_reward, "quality": quality, "status": "pending_review", "submitted_at": now()}
+    submission = {"id": str(uuid4()), "task_id": task["id"], "task_title": task["title"], "worker_name": worker_name.strip(), "wallet_address": wallet_address, "response_text": response_text.strip(), "reward_work": task["reward_work"], "multiplier": float(multiplier), "final_reward_work": final_reward, "quality": quality, "status": "pending_review", "submitted_at": now()}
     submissions.insert(0, submission); task["submitted_count"] += 1
     return jsonify(success=True, data_mode="demo", submission=submission), 201
 
@@ -222,7 +233,7 @@ def review_submission(submission_id):
         debt_paid = min(reward, account["advance_debt_work"]); account["advance_debt_work"] -= debt_paid; account["has_active_advance"] = account["advance_debt_work"] > 0; account["earned_work"] += reward - debt_paid
         ledger_entries.insert(0, {"id": str(uuid4()), "worker_name": submission["worker_name"], "submission_id": submission_id, "type": "approved_work", "credit_work": reward, "debt_repayment_work": debt_paid, "created_at": now()})
         if reward > debt_paid:
-            token_issuances.insert(0, {"submission_id": submission_id, "worker_name": submission["worker_name"], "amount_wwp": reward - debt_paid, "status": "pending_testnet_oracle", "created_at": now()})
+            token_issuances.insert(0, {"submission_id": submission_id, "worker_name": submission["worker_name"], "wallet_address": submission["wallet_address"], "amount_wwp": reward - debt_paid, "status": "pending_testnet_oracle", "created_at": now(), "note": "No on-chain payment is made until the worker wallet, deployed contract, network, and authorized oracle are configured."})
     return jsonify(success=True, data_mode="demo", submission=submission)
 
 
@@ -233,14 +244,38 @@ def request_demo_advance(worker_name):
     if not isinstance(amount, int) or not 1 <= amount <= 500: return jsonify(success=False, error="amount_work must be a whole number from 1 to 500"), 400
     account = get_worker(worker_name); account["advance_debt_work"] += amount; account["has_active_advance"] = True
     ledger_entries.insert(0, {"id": str(uuid4()), "worker_name": worker_name, "type": "demo_advance", "credit_work": -amount, "debt_repayment_work": 0, "created_at": now()})
-    return jsonify(success=True, data_mode="demo", account=account, note="No voucher is created or issued."), 201
+    return jsonify(success=True, data_mode="demo", account=account, note="No WWP payment is created or transferred."), 201
 
 
 @app.get("/api/ledger")
 def worker_ledger():
     approved = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     pending = sum(item["final_reward_work"] for item in submissions if item["status"] == "pending_review")
-    return jsonify(data_mode="demo", approved_voucher_credits=approved, pending_voucher_credits=pending, estimated_voucher_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not transfer USDC or issue corporate vouchers.")
+    return jsonify(data_mode="demo", approved_wwp_payment_work=approved, pending_wwp_payment_work=pending, estimated_work_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not make on-chain WWP payments.")
+
+
+@app.get("/api/token/distribution")
+def token_distribution():
+    return jsonify(data_mode="demo", **token_sale_status())
+
+
+@app.post("/api/token/distribution-requests")
+def create_token_distribution_request():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="A JSON request body is required"), 400
+    purchaser_type = payload.get("purchaser_type")
+    organization_name = payload.get("organization_name")
+    contact_email = payload.get("contact_email")
+    if purchaser_type not in {"public_sector", "private_sector"}:
+        return jsonify(success=False, error="purchaser_type must be public_sector or private_sector"), 400
+    if not isinstance(organization_name, str) or not 1 <= len(organization_name.strip()) <= 120:
+        return jsonify(success=False, error="organization_name must contain 1 to 120 characters"), 400
+    if not isinstance(contact_email, str) or len(contact_email.strip()) > 254 or "@" not in contact_email:
+        return jsonify(success=False, error="a valid contact_email is required"), 400
+    request_record = {"id": str(uuid4()), "purchaser_type": purchaser_type, "organization_name": organization_name.strip(), "contact_email": contact_email.strip().lower(), "status": "compliance_review_required", "created_at": now()}
+    token_sale_requests.insert(0, request_record)
+    return jsonify(success=True, data_mode="demo", request=request_record, distribution=token_sale_status(), message="Interest recorded. No token sale, purchase agreement, payment collection, transfer, or allocation was created."), 201
 
 
 @app.post("/api/investor-interest")
@@ -260,13 +295,13 @@ def register_investor_interest():
 
 @app.get("/api/token")
 def work_proof_token():
-    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, issuance_basis="one WWP per approved work credit; aggregate supply must not exceed approved work plus active contracted future work", issuance=token_issuances, backing=contract_volume_summary(), note="Testnet prototype only. No token contract is deployed, minted, transferable, or redeemable by this application.")
+    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, payment_basis="one WWP per approved work unit after debt repayment; aggregate supply must not exceed approved work plus active contracted future work", pending_payments=token_issuances, backing=contract_volume_summary(), rewards={"model": "optional externally funded staking rewards", "guaranteed_interest": False, "contract_deployed": False}, distribution=token_sale_status(), note="Testnet prototype only. No token contract is deployed, minted, transferred, sold, or redeemable by this application.")
 
 
 @app.get("/api/owner/balance")
 def corporate_balance_sheet():
     funding = sum(Decimal(str(item["funding_usdc"])) for item in tasks)
-    return jsonify(data_mode="demo", client_contract_value_usdc=float(funding), worker_voucher_pool_usdc_equivalent=float(funding * Decimal("0.60")), owner_usdc_reserve=float(funding * Decimal("0.40")), usdc_transfers_received=False)
+    return jsonify(data_mode="demo", client_contract_value_usdc=float(funding), worker_wwp_payment_capacity=sum(item["reward_work"] * item["required_submissions"] for item in tasks), owner_usdc_reserve=float(funding * Decimal("0.40")), usdc_transfers_received=False)
 
 
 @app.post("/api/stripe/webhook")
