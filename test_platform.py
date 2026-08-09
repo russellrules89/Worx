@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import app, ledger_entries, submissions, worker_accounts
+from app import app, ledger_entries, submissions, token_issuances, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -10,6 +10,7 @@ class TestWorkPlatform(unittest.TestCase):
         self.client = app.test_client()
         submissions.clear()
         ledger_entries.clear()
+        token_issuances.clear()
         worker_accounts.clear()
 
     def submit_voice(self, worker="Alex"):
@@ -40,6 +41,9 @@ class TestWorkPlatform(unittest.TestCase):
         ledger = self.client.get("/api/ledger").get_json()
         self.assertEqual(ledger["approved_voucher_credits"], 12)
         self.assertEqual(len(ledger["entries"]), 1)
+        token = self.client.get("/api/token").get_json()
+        self.assertEqual(token["network"], "not_deployed")
+        self.assertEqual(token["issuance"][0]["amount_wwp"], 12)
 
     def test_demo_advance_is_repaid_before_earned_work(self):
         self.assertEqual(self.client.post("/api/workers/Alex/advance", json={"amount_work": 10}).status_code, 201)
@@ -48,6 +52,7 @@ class TestWorkPlatform(unittest.TestCase):
         self.client.post(f"/api/submissions/{submission_id}/review", json={"decision": "approved"})
         self.assertEqual(worker_accounts["Alex"]["advance_debt_work"], 0)
         self.assertEqual(worker_accounts["Alex"]["earned_work"], 3)
+        self.assertEqual(token_issuances[0]["amount_wwp"], 3)
 
     def test_webhook_is_unavailable_without_a_secret(self):
         with patch("app.STRIPE_WEBHOOK_SECRET", ""):
