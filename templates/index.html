@@ -1,148 +1,62 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Worx worker portal</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body class="min-h-screen bg-slate-950 text-slate-100">
-    <header class="border-b border-slate-800 bg-slate-900/90 px-6 py-4">
-      <div class="mx-auto flex max-w-6xl items-center justify-between">
-        <div>
-          <p class="text-xs font-bold uppercase tracking-[0.24em] text-cyan-400">Worx contributor network</p>
-          <h1 class="mt-1 text-xl font-semibold">Worker portal</h1>
-        </div>
-        <button id="wallet-button" class="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold hover:border-cyan-400">Connect wallet</button>
-      </div>
-    </header>
-
-    <main class="mx-auto max-w-6xl space-y-8 p-6">
-      <section class="rounded-xl border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-100">
-        Contribution consent is required. File uploads, external identity verification, and blockchain settlement remain unavailable until their providers and retention controls are configured. Do not submit personal, sensitive, or copyrighted material.
-      </section>
-
-      <section class="grid gap-4 md:grid-cols-4" aria-label="Workflow readiness">
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Consent</p><p id="consent-status" class="mt-2 font-semibold text-emerald-400">Required</p></article>
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Uploads</p><p id="upload-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Identity verification</p><p id="identity-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Testnet settlement</p><p id="onboarding-settlement-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
-      </section>
-
-      <section class="grid gap-4 md:grid-cols-3">
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-5">
-          <p class="text-sm text-slate-400">Contribution status</p>
-          <p id="contribution-count" class="mt-2 text-3xl font-bold">Loading</p>
-          <p class="mt-2 text-sm text-slate-400">No work has been accepted.</p>
-        </article>
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-5">
-          <p class="text-sm text-slate-400">Estimated rewards</p>
-          <p class="mt-2 text-3xl font-bold text-cyan-400">Not calculated</p>
-          <p class="mt-2 text-sm text-slate-400">Calculated after validation.</p>
-        </article>
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-5">
-          <p class="text-sm text-slate-400">Settlement</p>
-          <p id="settlement-status" class="mt-2 text-3xl font-bold text-slate-300">Disabled</p>
-          <p class="mt-2 text-sm text-slate-400">Testnet configuration required.</p>
-        </article>
-      </section>
-
-      <section class="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-6">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <p class="text-sm font-semibold text-cyan-400">1. Contribute off-chain</p>
-              <h2 class="mt-1 text-lg font-semibold">Choose a task</h2>
-            </div>
-            <span class="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">Preview</span>
-          </div>
-          <p class="mt-3 text-sm leading-6 text-slate-300">Workers should review a task, consent to the collection terms, and submit only data needed for that task. Server-side validation must complete before any reward calculation.</p>
-          <div class="mt-5 grid gap-3 sm:grid-cols-2">
-            <button data-task="Audio annotation" class="task-button rounded-lg border border-slate-700 p-4 text-left hover:border-cyan-400">
-              <strong class="block">Audio annotation</strong><span class="mt-1 block text-sm text-slate-400">Consent and quality checks required</span>
-            </button>
-            <button data-task="Data annotation" class="task-button rounded-lg border border-slate-700 p-4 text-left hover:border-cyan-400">
-              <strong class="block">Data annotation</strong><span class="mt-1 block text-sm text-slate-400">Server validation required</span>
-            </button>
-          </div>
-          <p id="task-status" class="mt-4 text-sm text-slate-300" aria-live="polite">Select a task to view its preview state.</p>
-        </article>
-
-        <aside class="rounded-xl border border-slate-800 bg-slate-900 p-6">
-          <p class="text-sm font-semibold text-cyan-400">2. Validate and settle</p>
-          <ol class="mt-4 space-y-3 text-sm text-slate-300">
-            <li><strong>Validate:</strong> apply server-side quality and fraud checks.</li>
-            <li><strong>Calculate:</strong> record an off-chain reward estimate with an audit trail.</li>
-            <li><strong>Settle:</strong> use an approved batch process on a configured testnet before production.</li>
-          </ol>
-          <p id="policy" class="mt-5 border-t border-slate-800 pt-4 text-xs leading-5 text-slate-400">Loading settlement policy.</p>
-        </aside>
-      </section>
-
-      <section class="rounded-xl border border-slate-800 bg-slate-900 p-6">
-        <div class="flex items-center justify-between"><h2 class="text-lg font-semibold">Contribution queue</h2><span class="text-sm text-slate-400">Preview records</span></div>
-        <div id="queue" class="mt-4 space-y-3"><p class="text-sm text-slate-400">Loading contribution state.</p></div>
-      </section>
-    </main>
-
-    <script>
-      async function loadOnboarding() {
-        try {
-          const response = await fetch('/api/worker/onboarding');
-          if (!response.ok) throw new Error('Onboarding unavailable');
-          const data = await response.json();
-          document.querySelector('#consent-status').textContent = data.consent.required ? `Required (${data.consent.policy_version})` : 'Unavailable';
-          document.querySelector('#upload-status').textContent = data.uploads.enabled ? 'Available' : 'Not configured';
-          document.querySelector('#identity-status').textContent = data.identity_verification.enabled ? 'Available' : 'Not configured';
-          document.querySelector('#onboarding-settlement-status').textContent = data.settlement.enabled ? 'Available' : 'Not configured';
-        } catch (_) {
-          for (const id of ['upload-status', 'identity-status', 'onboarding-settlement-status']) document.querySelector(`#${id}`).textContent = 'Unavailable';
-        }
-      }
-
-      async function loadOverview() {
-        try {
-          const response = await fetch('/api/worker/overview');
-          if (!response.ok) throw new Error('Overview unavailable');
-          const data = await response.json();
-          document.querySelector('#contribution-count').textContent = String(data.contributions.length);
-          document.querySelector('#settlement-status').textContent = data.settlement.enabled ? 'Enabled' : 'Disabled';
-          document.querySelector('#policy').textContent = data.reward_policy;
-          const queue = document.querySelector('#queue');
-          queue.replaceChildren(...data.contributions.map((item) => {
-            const card = document.createElement('article');
-            card.className = 'flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 p-4';
-            const details = document.createElement('div');
-            const type = document.createElement('p'); type.className = 'font-medium'; type.textContent = item.type;
-            const id = document.createElement('p'); id.className = 'text-sm text-slate-400'; id.textContent = item.id;
-            details.append(type, id);
-            const state = document.createElement('div'); state.className = 'text-right';
-            const status = document.createElement('p'); status.className = 'text-sm'; status.textContent = item.status;
-            const reward = document.createElement('p'); reward.className = 'text-xs text-slate-400'; reward.textContent = item.reward;
-            state.append(status, reward); card.append(details, state); return card;
-          }));
-        } catch (_) {
-          document.querySelector('#contribution-count').textContent = 'Unavailable';
-          document.querySelector('#queue').textContent = 'Unable to load preview data.';
-        }
-      }
-
-      document.querySelectorAll('.task-button').forEach((button) => {
-        button.addEventListener('click', () => {
-          document.querySelector('#task-status').textContent = `${button.dataset.task} is not accepting submissions in this preview.`;
-        });
-      });
-
-      document.querySelector('#wallet-button').addEventListener('click', async () => {
-        if (!window.ethereum) { document.querySelector('#wallet-button').textContent = 'No wallet detected'; return; }
-        try {
-          const [address] = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          document.querySelector('#wallet-button').textContent = `${address.slice(0, 6)}…${address.slice(-4)}`;
-        } catch (_) { document.querySelector('#wallet-button').textContent = 'Connection declined'; }
-      });
-
-      loadOnboarding();
-      loadOverview();
-    </script>
-  </body>
-</html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Worx | Paid data work</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+      <div class="flex items-center gap-3"><span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-600 font-bold text-white">W</span><div><p class="font-bold">Worx</p><p class="text-xs text-slate-500">Paid data work, made clear</p></div></div>
+      <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Testnet workflow demo</span>
+    </div>
+  </header>
+  <main class="mx-auto max-w-6xl space-y-6 px-5 py-8">
+    <section class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      This is a product-flow demo. WWP is earned from verified annotation and voice work; it is not proof-of-work mining. This testnet workflow does not accept, verify, or transfer cryptocurrency, capture audio files, or deploy a token contract.
+    </section>
+    <section class="flex flex-col gap-4 rounded-2xl bg-slate-900 p-6 text-white md:flex-row md:items-end md:justify-between">
+      <div><p class="text-sm font-semibold text-indigo-200">Corporate-funded work platform</p><h1 class="mt-1 text-3xl font-bold">Clear work, clear review, clear WWP rewards.</h1><p class="mt-2 max-w-2xl text-sm text-slate-300">Workers submit annotation or voice responses. Administrators review quality. Corporations fund work orders to the owner wallet outside this demo.</p></div>
+      <a href="#available-work" class="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900">Browse available work</a>
+    </section>
+    <section class="grid gap-4 md:grid-cols-4">
+      <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-sm text-slate-500">Approved WWP</p><p id="approved" class="mt-2 text-3xl font-bold">0 WWP</p><p class="mt-1 text-xs text-slate-500">On-chain WWP payment pending configuration</p></article>
+      <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-sm text-slate-500">WWP payments in review</p><p id="pending" class="mt-2 text-3xl font-bold">0 WWP</p><p class="mt-1 text-xs text-slate-500">Awaiting quality review</p></article>
+      <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-sm text-slate-500">Work-backed WWP (testnet)</p><p id="token-supply" class="mt-2 text-3xl font-bold">0 WWP</p><p class="mt-1 text-xs text-slate-500">Minted only after approved work</p></article>
+      <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p class="text-sm text-slate-500">Corporate crypto funding</p><p id="contracts" class="mt-2 text-3xl font-bold">0 pending</p><p class="mt-1 text-xs text-slate-500">Awaiting administrator verification</p></article>
+    </section>
+    <section class="grid gap-6 lg:grid-cols-3">
+      <article id="available-work" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2"><div class="flex items-center justify-between"><div><h2 class="text-lg font-bold">Available work</h2><p class="text-sm text-slate-500">Compare reward, requirements, and progress before choosing.</p></div><span id="task-count" class="text-sm text-slate-500"></span></div><div id="tasks" class="mt-5 space-y-3"></div></article>
+      <aside class="rounded-xl border border-indigo-100 bg-indigo-50 p-6"><h2 class="font-bold text-indigo-950">Roles</h2><ol class="mt-4 space-y-3 text-sm text-indigo-950"><li><b>Corporation</b><br><span class="text-indigo-800">Funds a work order in cryptocurrency to the owner wallet and provides a transaction reference.</span></li><li><b>Administrator</b><br><span class="text-indigo-800">Verifies funding and reviews submitted work before approving earned WWP.</span></li><li><b>Worker</b><br><span class="text-indigo-800">Completes annotation or voice work and supplies a wallet for a future testnet payout.</span></li></ol></aside>
+    </section>
+    <section class="grid gap-6 lg:grid-cols-2">
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"><div><h2 class="text-lg font-bold">Submit selected work</h2><p id="selected-task-summary" class="mt-1 text-sm text-slate-500">Select a task above to view its reward and requirements.</p></div><form id="submission-form" class="mt-5 grid gap-4"><input id="worker" required maxlength="80" class="rounded-lg border border-slate-300 p-3" placeholder="Worker display name"><select id="task-id" class="rounded-lg border border-slate-300 p-3" aria-label="Task"></select><input id="wallet" maxlength="42" class="rounded-lg border border-slate-300 p-3" placeholder="Optional EVM wallet for future testnet payout"><textarea id="response" required maxlength="2000" class="min-h-28 rounded-lg border border-slate-300 p-3" placeholder="Enter your completed annotation or transcript"></textarea><div id="voice-checks" class="rounded-lg bg-slate-50 p-3"><p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Voice quality checklist</p><div class="grid gap-2 sm:grid-cols-3"><input id="duration" type="number" min="0" step=".1" value="2" class="rounded border border-slate-300 p-2" placeholder="Seconds"><select id="metadata" class="rounded border border-slate-300 p-2"><option value="true">Metadata included</option><option value="false">Metadata missing</option></select><input id="snr" type="number" value="20" class="rounded border border-slate-300 p-2" placeholder="SNR dB"></div></div><button class="rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white">Submit for review</button><p id="submission-status" class="text-sm" aria-live="polite"></p></form></article>
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"><h2 class="text-lg font-bold">Worker submissions</h2><p class="mt-1 text-sm text-slate-500">Administrators review work through the protected administrator API before any WWP payment is queued.</p><div id="submissions" class="mt-5 space-y-3"></div><div class="mt-6 border-t border-slate-200 pt-5"><h3 class="font-semibold">Demo advance tracker</h3><p class="mt-1 text-sm text-slate-500">An approved task repays demo debt before it adds WWP.</p><div class="mt-3 flex gap-2"><input id="advance-worker" class="min-w-0 flex-1 rounded-lg border border-slate-300 p-2" placeholder="Worker name"><button id="advance" type="button" class="rounded-lg border border-slate-300 px-3 text-sm font-semibold">Add 25-WWP debt</button></div></div></article>
+    </section>
+    <section class="grid gap-6 lg:grid-cols-2">
+      <article class="rounded-xl border border-indigo-200 bg-indigo-50 p-6 shadow-sm"><h2 class="text-lg font-bold text-indigo-950">Corporation: record payment reference</h2><p class="mt-2 text-sm text-indigo-950">Submit a transaction reference after funding the configured public owner wallet. An administrator must verify it; this form does not transfer cryptocurrency.</p><form id="corporate-payment-form" class="mt-4 grid gap-3"><input id="corporation" required maxlength="120" class="rounded-lg border border-indigo-200 bg-white p-3" placeholder="Corporation name"><div class="grid grid-cols-2 gap-3"><input id="payment-asset" required maxlength="16" class="rounded-lg border border-indigo-200 bg-white p-3" placeholder="Asset, e.g. USDC"><input id="payment-amount" required min="0" step="any" type="number" class="rounded-lg border border-indigo-200 bg-white p-3" placeholder="Amount"></div><input id="payment-reference" required maxlength="160" class="rounded-lg border border-indigo-200 bg-white p-3" placeholder="Transaction reference"><button class="rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white">Record payment reference</button><p id="corporate-payment-status" class="text-sm" aria-live="polite"></p></form></article>
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"><h2 class="text-lg font-bold">Client: create a work order</h2><p class="mt-1 text-sm text-slate-500">Set a clear reward and volume before publishing.</p><form id="task-form" class="mt-5 grid gap-3"><input id="client" required maxlength="80" class="rounded-lg border border-slate-300 p-3" placeholder="Client organization"><input id="title" required maxlength="120" class="rounded-lg border border-slate-300 p-3" placeholder="Task title"><textarea id="instructions" required maxlength="1000" class="rounded-lg border border-slate-300 p-3" placeholder="Clear instructions for workers"></textarea><select id="kind" class="rounded-lg border border-slate-300 p-3"><option value="voice">Voice transcript</option><option value="annotation">Data annotation</option></select><div class="grid grid-cols-2 gap-3"><input id="reward" required type="number" min="1" value="10" class="rounded-lg border border-slate-300 p-3" placeholder="WWP/task"><input id="quantity" required type="number" min="1" value="100" class="rounded-lg border border-slate-300 p-3" placeholder="Number of tasks"></div><p id="funding-estimate" class="rounded-lg bg-slate-50 p-3 text-sm text-slate-700"></p><button class="rounded-lg bg-slate-900 px-4 py-3 font-semibold text-white">Create demo work order</button><p id="task-status" class="text-sm" aria-live="polite"></p></form></article>
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"><h2 class="text-lg font-bold">Activity</h2><p class="mt-1 text-sm text-slate-500">A simple audit trail for approved work and demo advances.</p><div id="entries" class="mt-5 space-y-2 text-sm"></div></article>
+    </section>
+  </main>
+<script>
+const $=s=>document.querySelector(s), esc=v=>{const e=document.createElement('span');e.textContent=v;return e.innerHTML}, usdc=v=>`${Number(v).toFixed(2)} USDC`, wwpPayment=v=>`${v} WWP`, wwp=v=>`${v} WWP`;
+async function json(url,options){const response=await fetch(url,options),data=await response.json();if(!response.ok)throw Error(data.error||'Request failed');return data}
+let taskList=[];
+function selectedTask(){return taskList.find(task=>task.id===$('#task-id').value)}
+function renderTaskSelection(){const task=selectedTask();$('#selected-task-summary').textContent=task?`${wwpPayment(task.reward_work)} from ${task.corporation_name} · ${task.kind==='voice'?'Voice checklist required':'Annotation task'} · ${task.required_submissions-task.submitted_count} spots remaining`:'No work is currently available.';$('#voice-checks').style.display=task?.kind==='voice'?'block':'none'}
+function renderFundingEstimate(){const cents=Number($('#reward').value)||0,quantity=Number($('#quantity').value)||0;$('#funding-estimate').textContent=`Estimated owner reserve: ${usdc((cents*quantity)/100)}. Workers earn ${wwpPayment(cents)} per approved task; no USDC transfer or token is transferred in this demo.`}
+async function load(){const [tasks,ledger,submissionData,token,funding]=await Promise.all([json('/api/tasks'),json('/api/ledger'),json('/api/submissions'),json('/api/token'),json('/api/owner/crypto-funding')]);taskList=tasks.tasks.filter(task=>task.status==='open');$('#approved').textContent=wwpPayment(ledger.approved_wwp_payment_work);$('#pending').textContent=wwpPayment(ledger.pending_wwp_payment_work);$('#contracts').textContent=`${Object.values(funding.totals_by_status_and_asset.pending_verification).join(' + ')||'0'} pending`;$('#token-supply').textContent=wwp(token.pending_payments.reduce((total,item)=>total+item.amount_wwp,0));$('#task-count').textContent=`${taskList.length} open`;
+$('#task-id').innerHTML=taskList.map(task=>`<option value="${task.id}">${esc(task.title)} — ${wwpPayment(task.reward_work)}</option>`).join('');
+$('#tasks').innerHTML=taskList.length?taskList.map(task=>`<button type="button" data-task="${task.id}" class="task-card w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-indigo-400 hover:bg-indigo-50"><div class="flex flex-col justify-between gap-2 sm:flex-row"><div><p class="font-semibold">${esc(task.title)}</p><p class="mt-1 text-sm text-slate-500">${esc(task.corporation_name)} WWP payment · ${esc(task.kind)} · ${task.required_submissions-task.submitted_count} spots remaining</p></div><div class="shrink-0 text-left sm:text-right"><p class="font-bold text-emerald-700">${wwpPayment(task.reward_work)}</p><p class="text-xs text-slate-500">per approved task</p></div></div><p class="mt-3 text-sm text-slate-700">${esc(task.instructions)}</p></button>`).join(''):'<p class="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No open work right now.</p>';
+$('#entries').innerHTML=ledger.entries.length?ledger.entries.map(entry=>`<div class="rounded-lg bg-slate-50 p-3"><b>${esc(entry.worker_name)}</b> · ${esc(entry.type.replaceAll('_',' '))} · ${wwpPayment(entry.credit_work)} <span class="text-slate-500">${new Date(entry.created_at).toLocaleTimeString()}</span></div>`).join(''):'<p class="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No approved work or advances yet.</p>';
+$('#submissions').innerHTML=submissionData.submissions.length?submissionData.submissions.map(submission=>`<div class="rounded-lg border border-slate-200 p-4"><div class="flex justify-between gap-3"><div><b>${esc(submission.task_title)}</b><p class="mt-1 text-sm text-slate-500">${esc(submission.worker_name)} · ${wwpPayment(submission.final_reward_work)}</p></div><span class="h-fit rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">${esc(submission.status.replaceAll('_',' '))}</span></div><p class="mt-3 text-sm">${esc(submission.response_text)}</p>${submission.status==='pending_review'?`<div class="mt-3 flex gap-2"><button class="review rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white" data-id="${submission.id}" data-decision="approved">Approve</button><button class="review rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold" data-id="${submission.id}" data-decision="needs_revision">Request revision</button></div>`:''}</div>`).join(''):'<p class="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No work submitted yet.</p>';
+document.querySelectorAll('.task-card').forEach(button=>button.onclick=()=>{$('#task-id').value=button.dataset.task;renderTaskSelection();$('#submission-form').scrollIntoView({behavior:'smooth',block:'start'})});document.querySelectorAll('.review').forEach(button=>button.onclick=async()=>{try{await Promise.reject(new Error('Administrator review requires the protected administrator API.'));load()}catch(error){alert(error.message)}});renderTaskSelection();}
+$('#task-id').onchange=renderTaskSelection;['#reward','#quantity'].forEach(selector=>$(selector).oninput=renderFundingEstimate);
+$('#task-form').onsubmit=async event=>{event.preventDefault();try{await json('/api/client/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_name:$('#client').value,title:$('#title').value,instructions:$('#instructions').value,kind:$('#kind').value,reward_work:Number($('#reward').value),required_submissions:Number($('#quantity').value)})});event.target.reset();$('#task-status').textContent='Demo work order created. No USDC transfer or token transfer occurred.';renderFundingEstimate();load()}catch(error){$('#task-status').textContent=error.message}};
+$('#submission-form').onsubmit=async event=>{event.preventDefault();const task=selectedTask(),body={task_id:$('#task-id').value,worker_name:$('#worker').value,wallet_address:$('#wallet').value||null,response_text:$('#response').value};if(task?.kind==='voice')Object.assign(body,{duration_seconds:Number($('#duration').value),has_mobile_metadata:$('#metadata').value==='true',estimated_snr_db:Number($('#snr').value)});try{await json('/api/submissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('#submission-status').textContent='Submitted for review.';$('#response').value='';load()}catch(error){$('#submission-status').textContent=error.message}};
+$('#corporate-payment-form').onsubmit=async event=>{event.preventDefault();try{const result=await json('/api/corporate-crypto-payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({corporation_name:$('#corporation').value,asset:$('#payment-asset').value,amount:$('#payment-amount').value,transaction_reference:$('#payment-reference').value})});$('#corporate-payment-status').textContent=result.note;event.target.reset();load()}catch(error){$('#corporate-payment-status').textContent=error.message}};$('#advance').onclick=async()=>{try{await json(`/api/workers/${encodeURIComponent($('#advance-worker').value)}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount_work:25})});load()}catch(error){alert(error.message)}};renderFundingEstimate();load().catch(error=>alert(error.message));
+</script>
+</body></html>

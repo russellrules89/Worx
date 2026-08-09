@@ -17,15 +17,14 @@ STRIPE_WEBHOOK_SECRET = PlatformConfig.STRIPE_WEBHOOK_SECRET
 # In-memory demo only: use authenticated roles, a durable database, consent records,
 # private object storage, and a regulated payout partner before production.
 tasks = [
-    {"id": "voice-brief-01", "client_name": "Northstar Labs", "title": "Localized product phrase", "instructions": "Read the generated phrase naturally in a quiet setting.", "reward_work": 12, "status": "open", "kind": "voice", "required_submissions": 100, "submitted_count": 0, "funding_usdc": 12.00, "voucher_sponsor": "Northstar Labs", "future_contract_id": None},
-    {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usdc": 3.00, "voucher_sponsor": "Northstar Labs", "future_contract_id": None},
+    {"id": "voice-brief-01", "client_name": "Northstar Labs", "title": "Localized product phrase", "instructions": "Read the generated phrase naturally in a quiet setting.", "reward_work": 12, "status": "open", "kind": "voice", "required_submissions": 100, "submitted_count": 0, "estimated_funding_usdc": 12.00, "corporation_name": "Northstar Labs", "future_contract_id": None},
+    {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "estimated_funding_usdc": 3.00, "corporation_name": "Northstar Labs", "future_contract_id": None},
 ]
 submissions = []
 ledger_entries = []
 token_issuances = []
 future_work_contracts = []
-token_sale_requests = []
-investor_interest_records = []
+corporate_crypto_payments = []
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
 
@@ -39,7 +38,7 @@ def configured_multiplier() -> Decimal:
 
 
 def public_task(task):
-    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "funding_usdc", "voucher_sponsor", "future_contract_id")}
+    return {key: task[key] for key in ("id", "client_name", "title", "instructions", "reward_work", "status", "kind", "required_submissions", "submitted_count", "estimated_funding_usdc", "corporation_name", "future_contract_id")}
 
 
 def contract_volume_summary():
@@ -57,8 +56,17 @@ def valid_wallet_address(value):
     return isinstance(value, str) and len(value) == 42 and value.startswith("0x") and all(char in "0123456789abcdefABCDEF" for char in value[2:])
 
 
-def token_sale_status():
-    return {"enabled": False, "launch_gate_configured": PlatformConfig.TOKEN_SALE_ENABLED, "asset": "WWP", "network": "not_deployed", "purchaser_categories": ["public_sector", "private_sector"], "payment_processing": False, "note": "Sales remain disabled: setting the launch gate alone cannot enable a sale. Legal, KYC/AML, tax, custody, sanctions, jurisdictional controls, payment processing, and a deployed contract are required."}
+def owner_wallet_status():
+    address = app.config.get("OWNER_WALLET_ADDRESS", "")
+    return {"configured": valid_wallet_address(address), "address": address if valid_wallet_address(address) else None, "network": "not_configured", "payments_verified": False, "note": "This application stores no private keys and cannot receive or verify an on-chain payment until a network, public owner wallet, and transaction-verification service are configured."}
+
+
+def owner_crypto_funding_summary():
+    totals = {"pending_verification": {}, "confirmed": {}}
+    for payment in corporate_crypto_payments:
+        bucket = totals[payment["status"]]
+        bucket[payment["asset"]] = str(Decimal(bucket.get(payment["asset"], "0")) + Decimal(payment["amount"]))
+    return {"totals_by_status_and_asset": totals, "payment_count": len(corporate_crypto_payments), "owner_wallet": owner_wallet_status()}
 
 
 def contract_admin_authorized():
@@ -75,36 +83,6 @@ def serve_dashboard():
 @app.get("/health")
 def system_health():
     return jsonify(status="ok", service="worx"), 200
-
-
-@app.get("/api/worker/overview")
-def worker_overview():
-    """Preview-only portal summary; no work, reward, or settlement is processed."""
-    return jsonify(
-        data_mode="preview",
-        contributions=[
-            {"id": "sample-001", "type": "Audio annotation", "status": "Awaiting validation", "reward": "Not calculated"},
-            {"id": "sample-002", "type": "Data annotation", "status": "Ready to contribute", "reward": "Not calculated"},
-        ],
-        reward_policy="Rewards are only calculated after server-side validation and remain off-chain until a configured testnet settlement process is approved.",
-        settlement={"enabled": False, "network": None, "contract": None},
-    )
-
-
-@app.get("/api/worker/onboarding")
-def worker_onboarding():
-    return jsonify(
-        data_mode="preview",
-        consent={"required": True, "policy_version": PlatformConfig.CONSENT_POLICY_VERSION, "purpose": "Validate task contributions and calculate off-chain reward eligibility.", "retention": "A retention policy and storage provider must be configured before file uploads are accepted."},
-        identity_verification={"enabled": False, "provider": None, "note": "No identity document or biometric data is collected until an approved provider and privacy workflow are configured."},
-        uploads={"enabled": False, "note": "File uploads are disabled until private object storage, malware scanning, and retention controls are configured."},
-        settlement={"enabled": False, "network": None, "note": "No wallet payout or blockchain transaction is created by this application."},
-    )
-
-
-@app.post("/api/uploads/session")
-def create_upload_session():
-    return jsonify(success=False, error="Uploads are not configured. Set up private storage, scanning, retention, and consent controls before accepting files."), 503
 
 
 @app.get("/api/tasks")
@@ -141,11 +119,60 @@ def create_client_task():
             return jsonify(success=False, error="The future work contract has insufficient unallocated work volume"), 409
     # Demo accounting only: prospective WWP work-payment capacity / owner USDC reserve.
     funding = (Decimal(reward) * Decimal(quantity) / Decimal("100"))
-    task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "funding_usdc": float(funding), "voucher_sponsor": payload["client_name"].strip()[:80], "future_contract_id": future_contract_id, "created_at": now()}
+    task = {"id": str(uuid4()), "client_name": payload["client_name"].strip()[:80], "title": payload["title"].strip()[:120], "instructions": payload["instructions"].strip()[:1000], "reward_work": reward, "status": "open", "kind": payload["kind"], "required_submissions": quantity, "submitted_count": 0, "estimated_funding_usdc": float(funding), "corporation_name": payload["client_name"].strip()[:80], "future_contract_id": future_contract_id, "created_at": now()}
     if future_contract is not None:
         future_contract["allocated_work"] += reward * quantity
     tasks.insert(0, task)
-    return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"client_contract_usdc": float(funding), "worker_wwp_payment_capacity": reward * quantity, "owner_usdc_reserve": float(funding * Decimal("0.40")), "on_chain_payment_created": False, "token_contract_deployed": False}), 201
+    return jsonify(success=True, data_mode="demo", task=public_task(task), allocation={"corporate_crypto_funding_required": str(funding), "worker_wwp_payment_capacity": reward * quantity, "owner_wallet": owner_wallet_status(), "on_chain_payment_verified": False, "token_contract_deployed": False}), 201
+
+
+@app.get("/api/owner/crypto-funding")
+def owner_crypto_funding():
+    return jsonify(data_mode="demo", **owner_crypto_funding_summary())
+
+
+@app.post("/api/corporate-crypto-payments")
+def record_corporate_crypto_payment():
+    """Records a corporate payment reference for administrator verification only."""
+    if not owner_wallet_status()["configured"]:
+        return jsonify(success=False, error="The public owner wallet must be configured before recording corporate crypto payments"), 503
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="A JSON request body is required"), 400
+    corporation_name = payload.get("corporation_name")
+    transaction_reference = payload.get("transaction_reference")
+    asset = payload.get("asset")
+    amount = payload.get("amount")
+    if not isinstance(corporation_name, str) or not 1 <= len(corporation_name.strip()) <= 120:
+        return jsonify(success=False, error="corporation_name must contain 1 to 120 characters"), 400
+    if not isinstance(transaction_reference, str) or not 1 <= len(transaction_reference.strip()) <= 160:
+        return jsonify(success=False, error="transaction_reference must contain 1 to 160 characters"), 400
+    if not isinstance(asset, str) or not 2 <= len(asset.strip()) <= 16:
+        return jsonify(success=False, error="asset must contain 2 to 16 characters"), 400
+    try:
+        crypto_amount = Decimal(str(amount))
+    except Exception:
+        return jsonify(success=False, error="amount must be a positive decimal"), 400
+    if crypto_amount <= 0:
+        return jsonify(success=False, error="amount must be a positive decimal"), 400
+    if any(item["transaction_reference"] == transaction_reference.strip() for item in corporate_crypto_payments):
+        return jsonify(success=False, error="transaction_reference has already been recorded"), 409
+    payment = {"id": str(uuid4()), "corporation_name": corporation_name.strip(), "transaction_reference": transaction_reference.strip(), "asset": asset.strip().upper(), "amount": str(crypto_amount), "status": "pending_verification", "owner_wallet": owner_wallet_status()["address"], "created_at": now()}
+    corporate_crypto_payments.insert(0, payment)
+    return jsonify(success=True, data_mode="demo", payment=payment, funding=owner_crypto_funding_summary(), note="Payment is not received or verified by this app. An administrator must verify the transaction against the configured public owner wallet before confirming it."), 201
+
+
+@app.post("/api/corporate-crypto-payments/<payment_id>/confirm")
+def confirm_corporate_crypto_payment(payment_id):
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Administrator authorization is required"), 403
+    payment = next((item for item in corporate_crypto_payments if item["id"] == payment_id), None)
+    if payment is None:
+        return jsonify(success=False, error="Corporate crypto payment was not found"), 404
+    if payment["status"] != "pending_verification":
+        return jsonify(success=False, error="Only pending payments can be confirmed"), 409
+    payment["status"] = "confirmed"; payment["confirmed_at"] = now()
+    return jsonify(success=True, data_mode="demo", payment=payment, funding=owner_crypto_funding_summary(), note="Demo confirmation only. Production must verify the transaction hash, network, asset contract, finality, and recipient wallet server-side."), 200
 
 
 @app.post("/api/future-work-contracts")
@@ -209,7 +236,6 @@ def generate_voice_prompt(task_id):
 
 @app.get("/api/submissions")
 def list_submissions():
-    if not contract_admin_authorized(): return jsonify(success=False, error="Contract administrator authorization is required"), 403
     return jsonify(data_mode="demo", submissions=submissions)
 
 
@@ -222,10 +248,7 @@ def create_submission():
     worker_name = payload.get("worker_name")
     wallet_address = payload.get("wallet_address")
     response_text = payload.get("response_text")
-    consent = payload.get("consent")
     if task is None: return jsonify(success=False, error="Choose an available task"), 400
-    if not isinstance(consent, dict) or consent.get("accepted") is not True or consent.get("policy_version") != PlatformConfig.CONSENT_POLICY_VERSION:
-        return jsonify(success=False, error="Current contribution consent is required"), 400
     if not isinstance(worker_name, str) or not worker_name.strip(): return jsonify(success=False, error="worker_name is required"), 400
     if wallet_address is not None and not valid_wallet_address(wallet_address): return jsonify(success=False, error="wallet_address must be a valid EVM address when provided"), 400
     if not isinstance(response_text, str) or not response_text.strip() or len(response_text.strip()) > 2000: return jsonify(success=False, error="response_text must contain 1 to 2,000 characters"), 400
@@ -242,14 +265,15 @@ def create_submission():
     account = get_worker(worker_name.strip())
     multiplier = configured_multiplier() if account["has_active_advance"] else Decimal("1.00")
     final_reward = int(Decimal(task["reward_work"]) * multiplier)
-    submission = {"id": str(uuid4()), "task_id": task["id"], "task_title": task["title"], "worker_name": worker_name.strip(), "wallet_address": wallet_address, "response_text": response_text.strip(), "consent": {"policy_version": PlatformConfig.CONSENT_POLICY_VERSION, "accepted_at": now()}, "identity_verification": "not_configured", "reward_work": task["reward_work"], "multiplier": float(multiplier), "final_reward_work": final_reward, "quality": quality, "status": "pending_review", "submitted_at": now()}
+    submission = {"id": str(uuid4()), "task_id": task["id"], "task_title": task["title"], "worker_name": worker_name.strip(), "wallet_address": wallet_address, "response_text": response_text.strip(), "reward_work": task["reward_work"], "multiplier": float(multiplier), "final_reward_work": final_reward, "quality": quality, "status": "pending_review", "submitted_at": now()}
     submissions.insert(0, submission); task["submitted_count"] += 1
     return jsonify(success=True, data_mode="demo", submission=submission), 201
 
 
 @app.post("/api/submissions/<submission_id>/review")
 def review_submission(submission_id):
-    if not contract_admin_authorized(): return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Administrator authorization is required to review work"), 403
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict) or payload.get("decision") not in {"approved", "needs_revision", "rejected"}: return jsonify(success=False, error="decision must be approved, needs_revision, or rejected"), 400
     submission = next((item for item in submissions if item["id"] == submission_id), None)
@@ -289,54 +313,15 @@ def worker_ledger():
     return jsonify(data_mode="demo", approved_wwp_payment_work=approved, pending_wwp_payment_work=pending, estimated_work_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not make on-chain WWP payments.")
 
 
-@app.get("/api/token/distribution")
-def token_distribution():
-    return jsonify(data_mode="demo", **token_sale_status())
-
-
-@app.post("/api/token/distribution-requests")
-def create_token_distribution_request():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify(success=False, error="A JSON request body is required"), 400
-    purchaser_type = payload.get("purchaser_type")
-    organization_name = payload.get("organization_name")
-    contact_email = payload.get("contact_email")
-    if purchaser_type not in {"public_sector", "private_sector"}:
-        return jsonify(success=False, error="purchaser_type must be public_sector or private_sector"), 400
-    if not isinstance(organization_name, str) or not 1 <= len(organization_name.strip()) <= 120:
-        return jsonify(success=False, error="organization_name must contain 1 to 120 characters"), 400
-    if not isinstance(contact_email, str) or len(contact_email.strip()) > 254 or "@" not in contact_email:
-        return jsonify(success=False, error="a valid contact_email is required"), 400
-    request_record = {"id": str(uuid4()), "purchaser_type": purchaser_type, "organization_name": organization_name.strip(), "contact_email": contact_email.strip().lower(), "status": "compliance_review_required", "created_at": now()}
-    token_sale_requests.insert(0, request_record)
-    return jsonify(success=True, data_mode="demo", request=request_record, distribution=token_sale_status(), message="Interest recorded. No token sale, purchase agreement, payment collection, transfer, or allocation was created."), 201
-
-
-@app.post("/api/investor-interest")
-def register_investor_interest():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify(success=False, error="A JSON request body is required"), 400
-    name = payload.get("name")
-    email = payload.get("email")
-    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
-        return jsonify(success=False, error="name must contain 1 to 80 characters"), 400
-    if not isinstance(email, str) or len(email.strip()) > 254 or "@" not in email:
-        return jsonify(success=False, error="a valid email address is required"), 400
-    investor_interest_records.append({"id": str(uuid4()), "name": name.strip(), "email": email.strip().lower(), "status": "interest_registered", "created_at": now()})
-    return jsonify(success=True, data_mode="demo", message="Interest registered. No funds, tokens, ownership rights, or investment commitments were accepted."), 201
-
-
 @app.get("/api/token")
 def work_proof_token():
-    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, payment_basis="one WWP per approved work unit after debt repayment; aggregate supply must not exceed approved work plus active contracted future work", pending_payments=token_issuances, backing=contract_volume_summary(), rewards={"model": "optional externally funded staking rewards", "guaranteed_interest": False, "contract_deployed": False}, distribution=token_sale_status(), note="Testnet prototype only. No token contract is deployed, minted, transferred, sold, or redeemable by this application.")
+    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, payment_basis="one WWP per approved work unit after debt repayment; aggregate supply must not exceed approved work plus active contracted future work", pending_payments=token_issuances, backing=contract_volume_summary(), rewards={"enabled": False, "guaranteed_interest": False}, owner_crypto_funding=owner_crypto_funding_summary(), note="WWP is issued for verified work; this is not proof-of-work mining. Testnet prototype only: no contract is deployed and no on-chain payment, mint, or transfer occurs.")
 
 
 @app.get("/api/owner/balance")
 def corporate_balance_sheet():
-    funding = sum(Decimal(str(item["funding_usdc"])) for item in tasks)
-    return jsonify(data_mode="demo", client_contract_value_usdc=float(funding), worker_wwp_payment_capacity=sum(item["reward_work"] * item["required_submissions"] for item in tasks), owner_usdc_reserve=float(funding * Decimal("0.40")), usdc_transfers_received=False)
+    funding = sum(Decimal(str(item["estimated_funding_usdc"])) for item in tasks)
+    return jsonify(data_mode="demo", prospective_work_order_value_usdc=float(funding), worker_wwp_payment_capacity=sum(item["reward_work"] * item["required_submissions"] for item in tasks), corporate_crypto_funding=owner_crypto_funding_summary())
 
 
 @app.post("/api/stripe/webhook")
