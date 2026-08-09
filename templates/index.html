@@ -19,7 +19,14 @@
 
     <main class="mx-auto max-w-6xl space-y-8 p-6">
       <section class="rounded-xl border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-100">
-        Preview only. Contributions, uploads, identity checks, rewards, and blockchain settlement are disabled. Do not submit personal, sensitive, or copyrighted material.
+        Contribution consent is required. File uploads, external identity verification, and blockchain settlement remain unavailable until their providers and retention controls are configured. Do not submit personal, sensitive, or copyrighted material.
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-4" aria-label="Workflow readiness">
+        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Consent</p><p id="consent-status" class="mt-2 font-semibold text-emerald-400">Required</p></article>
+        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Uploads</p><p id="upload-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
+        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Identity verification</p><p id="identity-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
+        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Testnet settlement</p><p id="onboarding-settlement-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
       </section>
 
       <section class="grid gap-4 md:grid-cols-3">
@@ -79,6 +86,20 @@
     </main>
 
     <script>
+      async function loadOnboarding() {
+        try {
+          const response = await fetch('/api/worker/onboarding');
+          if (!response.ok) throw new Error('Onboarding unavailable');
+          const data = await response.json();
+          document.querySelector('#consent-status').textContent = data.consent.required ? `Required (${data.consent.policy_version})` : 'Unavailable';
+          document.querySelector('#upload-status').textContent = data.uploads.enabled ? 'Available' : 'Not configured';
+          document.querySelector('#identity-status').textContent = data.identity_verification.enabled ? 'Available' : 'Not configured';
+          document.querySelector('#onboarding-settlement-status').textContent = data.settlement.enabled ? 'Available' : 'Not configured';
+        } catch (_) {
+          for (const id of ['upload-status', 'identity-status', 'onboarding-settlement-status']) document.querySelector(`#${id}`).textContent = 'Unavailable';
+        }
+      }
+
       async function loadOverview() {
         try {
           const response = await fetch('/api/worker/overview');
@@ -120,6 +141,7 @@
         } catch (_) { document.querySelector('#wallet-button').textContent = 'Connection declined'; }
       });
 
+      loadOnboarding();
       loadOverview();
     </script>
   </body>

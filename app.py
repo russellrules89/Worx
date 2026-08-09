@@ -91,6 +91,22 @@ def worker_overview():
     )
 
 
+@app.get("/api/worker/onboarding")
+def worker_onboarding():
+    return jsonify(
+        data_mode="preview",
+        consent={"required": True, "policy_version": PlatformConfig.CONSENT_POLICY_VERSION, "purpose": "Validate task contributions and calculate off-chain reward eligibility.", "retention": "A retention policy and storage provider must be configured before file uploads are accepted."},
+        identity_verification={"enabled": False, "provider": None, "note": "No identity document or biometric data is collected until an approved provider and privacy workflow are configured."},
+        uploads={"enabled": False, "note": "File uploads are disabled until private object storage, malware scanning, and retention controls are configured."},
+        settlement={"enabled": False, "network": None, "note": "No wallet payout or blockchain transaction is created by this application."},
+    )
+
+
+@app.post("/api/uploads/session")
+def create_upload_session():
+    return jsonify(success=False, error="Uploads are not configured. Set up private storage, scanning, retention, and consent controls before accepting files."), 503
+
+
 @app.get("/api/tasks")
 def list_tasks():
     return jsonify(data_mode="demo", tasks=[public_task(task) for task in tasks])
@@ -193,6 +209,7 @@ def generate_voice_prompt(task_id):
 
 @app.get("/api/submissions")
 def list_submissions():
+    if not contract_admin_authorized(): return jsonify(success=False, error="Contract administrator authorization is required"), 403
     return jsonify(data_mode="demo", submissions=submissions)
 
 
@@ -205,7 +222,10 @@ def create_submission():
     worker_name = payload.get("worker_name")
     wallet_address = payload.get("wallet_address")
     response_text = payload.get("response_text")
+    consent = payload.get("consent")
     if task is None: return jsonify(success=False, error="Choose an available task"), 400
+    if not isinstance(consent, dict) or consent.get("accepted") is not True or consent.get("policy_version") != PlatformConfig.CONSENT_POLICY_VERSION:
+        return jsonify(success=False, error="Current contribution consent is required"), 400
     if not isinstance(worker_name, str) or not worker_name.strip(): return jsonify(success=False, error="worker_name is required"), 400
     if wallet_address is not None and not valid_wallet_address(wallet_address): return jsonify(success=False, error="wallet_address must be a valid EVM address when provided"), 400
     if not isinstance(response_text, str) or not response_text.strip() or len(response_text.strip()) > 2000: return jsonify(success=False, error="response_text must contain 1 to 2,000 characters"), 400
@@ -222,13 +242,14 @@ def create_submission():
     account = get_worker(worker_name.strip())
     multiplier = configured_multiplier() if account["has_active_advance"] else Decimal("1.00")
     final_reward = int(Decimal(task["reward_work"]) * multiplier)
-    submission = {"id": str(uuid4()), "task_id": task["id"], "task_title": task["title"], "worker_name": worker_name.strip(), "wallet_address": wallet_address, "response_text": response_text.strip(), "reward_work": task["reward_work"], "multiplier": float(multiplier), "final_reward_work": final_reward, "quality": quality, "status": "pending_review", "submitted_at": now()}
+    submission = {"id": str(uuid4()), "task_id": task["id"], "task_title": task["title"], "worker_name": worker_name.strip(), "wallet_address": wallet_address, "response_text": response_text.strip(), "consent": {"policy_version": PlatformConfig.CONSENT_POLICY_VERSION, "accepted_at": now()}, "identity_verification": "not_configured", "reward_work": task["reward_work"], "multiplier": float(multiplier), "final_reward_work": final_reward, "quality": quality, "status": "pending_review", "submitted_at": now()}
     submissions.insert(0, submission); task["submitted_count"] += 1
     return jsonify(success=True, data_mode="demo", submission=submission), 201
 
 
 @app.post("/api/submissions/<submission_id>/review")
 def review_submission(submission_id):
+    if not contract_admin_authorized(): return jsonify(success=False, error="Contract administrator authorization is required"), 403
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict) or payload.get("decision") not in {"approved", "needs_revision", "rejected"}: return jsonify(success=False, error="decision must be approved, needs_revision, or rejected"), 400
     submission = next((item for item in submissions if item["id"] == submission_id), None)
