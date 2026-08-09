@@ -18,8 +18,12 @@ class PlatformConfig:
     CONSENT_POLICY_VERSION = os.environ.get("CONSENT_POLICY_VERSION", "2026-08-preview")
     IDENTITY_VERIFICATION_PROVIDER = os.environ.get("IDENTITY_VERIFICATION_PROVIDER", "")
     CONTRIBUTION_UPLOADS_ENABLED = False
-    TESTNET_SETTLEMENT_ENABLED = False
+    # Settlement is opt-in and remains testnet-only. Enabling it requires a
+    # deployed contract plus an authenticated oracle service outside this app.
+    TESTNET_SETTLEMENT_ENABLED = os.environ.get("TESTNET_SETTLEMENT_ENABLED", "false").lower() == "true"
     EVM_TESTNET_CHAIN_ID = os.environ.get("EVM_TESTNET_CHAIN_ID", "")
+    EVM_NETWORK_NAME = os.environ.get("EVM_NETWORK_NAME", "")
+    MINIMUM_CASHOUT_WORK = os.environ.get("MINIMUM_CASHOUT_WORK", "100")
 
     @staticmethod
     def payout_multiplier() -> Decimal:

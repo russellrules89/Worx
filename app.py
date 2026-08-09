@@ -57,6 +57,31 @@ def valid_wallet_address(value):
     return isinstance(value, str) and len(value) == 42 and value.startswith("0x") and all(char in "0123456789abcdefABCDEF" for char in value[2:])
 
 
+def settlement_status():
+    """Expose only settlement readiness; transaction signing stays in an isolated oracle."""
+    configured = bool(
+        PlatformConfig.TESTNET_SETTLEMENT_ENABLED
+        and valid_wallet_address(PlatformConfig.ETHEREUM_CONTRACT_ADDRESS)
+        and str(PlatformConfig.EVM_TESTNET_CHAIN_ID).isdigit()
+        and int(PlatformConfig.EVM_TESTNET_CHAIN_ID) > 0
+        and PlatformConfig.EVM_NETWORK_NAME
+    )
+    return {
+        "enabled": configured,
+        "environment": "testnet" if configured else "not_configured",
+        "network": PlatformConfig.EVM_NETWORK_NAME or None,
+        "chain_id": PlatformConfig.EVM_TESTNET_CHAIN_ID or None,
+        "contract": PlatformConfig.ETHEREUM_CONTRACT_ADDRESS or None,
+        "standard": "ERC-20",
+        "cashout": {
+            "available": False,
+            "minimum_work": PlatformConfig.MINIMUM_CASHOUT_WORK,
+            "reason": "An ERC-20 transfer is not a cash-out. A licensed redemption or off-ramp provider, KYC/AML, sanctions screening, tax handling, and reserve policy must be configured before fiat redemption is offered.",
+        },
+        "oracle_required": True,
+    }
+
+
 def token_sale_status():
     return {"enabled": False, "launch_gate_configured": PlatformConfig.TOKEN_SALE_ENABLED, "asset": "WWP", "network": "not_deployed", "purchaser_categories": ["public_sector", "private_sector"], "payment_processing": False, "note": "Sales remain disabled: setting the launch gate alone cannot enable a sale. Legal, KYC/AML, tax, custody, sanctions, jurisdictional controls, payment processing, and a deployed contract are required."}
 
@@ -87,7 +112,7 @@ def worker_overview():
             {"id": "sample-002", "type": "Data annotation", "status": "Ready to contribute", "reward": "Not calculated"},
         ],
         reward_policy="Rewards are only calculated after server-side validation and remain off-chain until a configured testnet settlement process is approved.",
-        settlement={"enabled": False, "network": None, "contract": None},
+        settlement=settlement_status(),
     )
 
 
@@ -98,7 +123,7 @@ def worker_onboarding():
         consent={"required": True, "policy_version": PlatformConfig.CONSENT_POLICY_VERSION, "purpose": "Validate task contributions and calculate off-chain reward eligibility.", "retention": "A retention policy and storage provider must be configured before file uploads are accepted."},
         identity_verification={"enabled": False, "provider": None, "note": "No identity document or biometric data is collected until an approved provider and privacy workflow are configured."},
         uploads={"enabled": False, "note": "File uploads are disabled until private object storage, malware scanning, and retention controls are configured."},
-        settlement={"enabled": False, "network": None, "note": "No wallet payout or blockchain transaction is created by this application."},
+        settlement={**settlement_status(), "note": "No wallet payout or blockchain transaction is created by this application. The oracle signs approved testnet mint batches only after deployment and authorization are configured."},
     )
 
 
@@ -286,7 +311,7 @@ def request_demo_advance(worker_name):
 def worker_ledger():
     approved = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     pending = sum(item["final_reward_work"] for item in submissions if item["status"] == "pending_review")
-    return jsonify(data_mode="demo", approved_wwp_payment_work=approved, pending_wwp_payment_work=pending, estimated_work_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not make on-chain WWP payments.")
+    return jsonify(data_mode="demo", approved_wwp_payment_work=approved, pending_wwp_payment_work=pending, estimated_work_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, settlement=settlement_status(), note="The ledger is the source of truth for approved contributions. A separately authenticated oracle may mint one unique ERC-20 proof per approved submission after testnet settlement is configured.")
 
 
 @app.get("/api/token/distribution")
@@ -330,7 +355,8 @@ def register_investor_interest():
 
 @app.get("/api/token")
 def work_proof_token():
-    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, payment_basis="one WWP per approved work unit after debt repayment; aggregate supply must not exceed approved work plus active contracted future work", pending_payments=token_issuances, backing=contract_volume_summary(), rewards={"model": "optional externally funded staking rewards", "guaranteed_interest": False, "contract_deployed": False}, distribution=token_sale_status(), note="Testnet prototype only. No token contract is deployed, minted, transferred, sold, or redeemable by this application.")
+    settlement = settlement_status()
+    return jsonify(data_mode="demo", network=settlement["network"] or "not_deployed", chain_id=settlement["chain_id"], contract=settlement["contract"], standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, payment_basis="one WWP per approved work unit after debt repayment; aggregate supply must not exceed approved work plus active contracted future work", pending_payments=token_issuances, backing=contract_volume_summary(), settlement=settlement, rewards={"model": "optional externally funded staking rewards", "guaranteed_interest": False, "contract_deployed": settlement["enabled"]}, distribution=token_sale_status(), note="Testnet prototype only. The app records approved work and queues unique oracle mint proofs; it never holds a private key or creates a cash-out path.")
 
 
 @app.get("/api/owner/balance")

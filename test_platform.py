@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import app, future_work_contracts, investor_interest_records, ledger_entries, submissions, token_issuances, token_sale_requests, worker_accounts
+from app import PlatformConfig, app, future_work_contracts, investor_interest_records, ledger_entries, settlement_status, submissions, token_issuances, token_sale_requests, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -23,6 +23,15 @@ class TestWorkPlatform(unittest.TestCase):
             "consent": {"accepted": True, "policy_version": "2026-08-preview"},
             "duration_seconds": 2, "has_mobile_metadata": True, "estimated_snr_db": 20,
         })
+
+
+    def test_settlement_requires_valid_testnet_configuration(self):
+        with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "not-an-address"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
+            self.assertFalse(settlement_status()["enabled"])
+        with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000001"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
+            status = settlement_status()
+            self.assertTrue(status["enabled"])
+            self.assertFalse(status["cashout"]["available"])
 
     def test_health_endpoint_response(self):
         self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
