@@ -14,6 +14,7 @@ class PlatformConfig:
     STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     ETHEREUM_CONTRACT_ADDRESS = os.environ.get("ETHEREUM_CONTRACT_ADDRESS", "")
     CONTRACT_ADMIN_API_KEY = os.environ.get("CONTRACT_ADMIN_API_KEY", "")
+    OWNER_WALLET_ADDRESS = os.environ.get("OWNER_WALLET_ADDRESS", "")
     TOKEN_SALE_ENABLED = os.environ.get("TOKEN_SALE_ENABLED", "false").lower() == "true"
     CONSENT_POLICY_VERSION = os.environ.get("CONSENT_POLICY_VERSION", "2026-08-preview")
     IDENTITY_VERIFICATION_PROVIDER = os.environ.get("IDENTITY_VERIFICATION_PROVIDER", "")
