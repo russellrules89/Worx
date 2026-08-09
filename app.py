@@ -22,6 +22,7 @@ tasks = [
 ]
 submissions = []
 ledger_entries = []
+token_issuances = []
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
 
@@ -133,6 +134,8 @@ def review_submission(submission_id):
         account = get_worker(submission["worker_name"]); reward = submission["final_reward_work"]
         debt_paid = min(reward, account["advance_debt_work"]); account["advance_debt_work"] -= debt_paid; account["has_active_advance"] = account["advance_debt_work"] > 0; account["earned_work"] += reward - debt_paid
         ledger_entries.insert(0, {"id": str(uuid4()), "worker_name": submission["worker_name"], "submission_id": submission_id, "type": "approved_work", "credit_work": reward, "debt_repayment_work": debt_paid, "created_at": now()})
+        if reward > debt_paid:
+            token_issuances.insert(0, {"submission_id": submission_id, "worker_name": submission["worker_name"], "amount_wwp": reward - debt_paid, "status": "pending_testnet_oracle", "created_at": now()})
     return jsonify(success=True, data_mode="demo", submission=submission)
 
 
@@ -151,6 +154,11 @@ def worker_ledger():
     approved = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     pending = sum(item["final_reward_work"] for item in submissions if item["status"] == "pending_review")
     return jsonify(data_mode="demo", approved_voucher_credits=approved, pending_voucher_credits=pending, estimated_voucher_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, note="Demo ledger only. This application does not transfer USDC or issue corporate vouchers.")
+
+
+@app.get("/api/token")
+def work_proof_token():
+    return jsonify(data_mode="demo", network="not_deployed", standard="ERC-20", name="Worx Work Proof", symbol="WWP", decimals=0, issuance_basis="one WWP per approved work credit", issuance=token_issuances, note="Testnet prototype only. No token contract is deployed, minted, transferable, or redeemable by this application.")
 
 
 @app.get("/api/owner/balance")
