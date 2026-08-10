@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import PlatformConfig, app, tasks, future_work_contracts, investor_interest_records, ledger_entries, settlement_status, submissions, token_issuances, token_sale_requests, training_runs, worker_accounts
+from app import PlatformConfig, app, contribution_records, tasks, future_work_contracts, investor_interest_records, ledger_entries, payout_batches, settlement_status, submissions, token_issuances, token_sale_requests, training_runs, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -10,7 +10,9 @@ class TestWorkPlatform(unittest.TestCase):
         self.client = app.test_client()
         self.contract_admin_headers = {"X-Contract-Admin-Key": "test-contract-admin"}
         submissions.clear()
+        contribution_records.clear()
         training_runs.clear()
+        payout_batches.clear()
         ledger_entries.clear()
         token_issuances.clear()
         future_work_contracts.clear()
@@ -21,11 +23,18 @@ class TestWorkPlatform(unittest.TestCase):
 
     def submit_voice(self, worker="Alex"):
         return self.client.post("/api/submissions", json={
-            "task_id": "voice-brief-01", "worker_name": worker, "response_text": "A clear demo transcript.",
+            "task_id": "voice-brief-01", "worker_name": worker, "wallet_address": "0x0000000000000000000000000000000000000001", "response_text": "A clear demo transcript.",
             "consent": {"accepted": True, "policy_version": "2026-08-preview"},
             "duration_seconds": 2, "has_mobile_metadata": True, "estimated_snr_db": 20,
         })
 
+
+    def register_contribution(self, submission_id):
+        return self.client.post("/api/contributions", json={
+            "submission_id": submission_id,
+            "storage_reference": f"blob://private/contributions/{submission_id}",
+            "content_sha256": "a" * 64,
+        })
 
     def test_settlement_requires_valid_testnet_configuration(self):
         with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "not-an-address"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
@@ -173,21 +182,41 @@ class TestWorkPlatform(unittest.TestCase):
         submission_id = created.get_json()["submission"]["id"]
         self.assertEqual(self.client.get("/api/training/manifest").status_code, 403)
         self.assertEqual(self.client.get("/api/training/manifest", headers=self.contract_admin_headers).get_json()["records"], [])
+        self.assertEqual(self.register_contribution(submission_id).status_code, 201)
         self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"}).status_code, 200)
         records = self.client.get("/api/training/manifest", headers=self.contract_admin_headers).get_json()["records"]
         self.assertEqual(records[0]["submission_id"], submission_id)
-        self.assertEqual(records[0]["content_reference"], "private-storage-required")
+        self.assertEqual(records[0]["storage_reference"], f"blob://private/contributions/{submission_id}")
 
     def test_training_run_requires_approved_contribution_and_stays_external(self):
         self.assertEqual(self.client.post("/api/training/runs", headers=self.contract_admin_headers).status_code, 409)
         created = self.submit_voice()
         submission_id = created.get_json()["submission"]["id"]
+        self.register_contribution(submission_id)
         self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"})
         response = self.client.post("/api/training/runs", headers=self.contract_admin_headers)
         self.assertEqual(response.status_code, 201)
         run = response.get_json()["training_run"]
         self.assertEqual(run["status"], "awaiting_private_pipeline")
         self.assertIsNone(run["model_artifact"])
+
+    def test_contribution_reference_requires_pending_consented_submission(self):
+        self.assertEqual(self.client.post("/api/contributions", json={}).status_code, 409)
+        submission = self.submit_voice().get_json()["submission"]
+        self.assertEqual(self.register_contribution(submission["id"]).status_code, 201)
+        self.assertEqual(self.register_contribution(submission["id"]).status_code, 409)
+
+    def test_testnet_payout_batch_records_oracle_transaction_without_signing(self):
+        with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000001"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
+            created = self.submit_voice()
+            submission_id = created.get_json()["submission"]["id"]
+            self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"})
+            batch_response = self.client.post("/api/payout-batches", headers=self.contract_admin_headers)
+            self.assertEqual(batch_response.status_code, 201)
+            batch_id = batch_response.get_json()["payout_batch"]["id"]
+            submitted = self.client.post(f"/api/payout-batches/{batch_id}/submit", headers=self.contract_admin_headers, json={"transaction_hash": "0x" + "b" * 64})
+            self.assertEqual(submitted.status_code, 200)
+            self.assertEqual(submitted.get_json()["payout_batch"]["status"], "oracle_submitted")
 
     def test_demo_advance_is_repaid_before_earned_work(self):
         self.assertEqual(self.client.post("/api/workers/Alex/advance", json={"amount_work": 10}).status_code, 201)
