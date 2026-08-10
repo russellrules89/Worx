@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import PlatformConfig, app, tasks, future_work_contracts, investor_interest_records, ledger_entries, settlement_status, submissions, token_issuances, token_sale_requests, worker_accounts
+from app import PlatformConfig, app, tasks, future_work_contracts, investor_interest_records, ledger_entries, settlement_status, submissions, token_issuances, token_sale_requests, training_runs, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -10,6 +10,7 @@ class TestWorkPlatform(unittest.TestCase):
         self.client = app.test_client()
         self.contract_admin_headers = {"X-Contract-Admin-Key": "test-contract-admin"}
         submissions.clear()
+        training_runs.clear()
         ledger_entries.clear()
         token_issuances.clear()
         future_work_contracts.clear()
@@ -166,6 +167,27 @@ class TestWorkPlatform(unittest.TestCase):
         backing = response.get_json()["backing"]
         self.assertEqual(backing["future_contracted_work"], 0)
         self.assertEqual(backing["maximum_backed_wwp"], 0)
+
+    def test_training_manifest_requires_admin_and_only_includes_approved_consent_records(self):
+        created = self.submit_voice()
+        submission_id = created.get_json()["submission"]["id"]
+        self.assertEqual(self.client.get("/api/training/manifest").status_code, 403)
+        self.assertEqual(self.client.get("/api/training/manifest", headers=self.contract_admin_headers).get_json()["records"], [])
+        self.assertEqual(self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"}).status_code, 200)
+        records = self.client.get("/api/training/manifest", headers=self.contract_admin_headers).get_json()["records"]
+        self.assertEqual(records[0]["submission_id"], submission_id)
+        self.assertEqual(records[0]["content_reference"], "private-storage-required")
+
+    def test_training_run_requires_approved_contribution_and_stays_external(self):
+        self.assertEqual(self.client.post("/api/training/runs", headers=self.contract_admin_headers).status_code, 409)
+        created = self.submit_voice()
+        submission_id = created.get_json()["submission"]["id"]
+        self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"})
+        response = self.client.post("/api/training/runs", headers=self.contract_admin_headers)
+        self.assertEqual(response.status_code, 201)
+        run = response.get_json()["training_run"]
+        self.assertEqual(run["status"], "awaiting_private_pipeline")
+        self.assertIsNone(run["model_artifact"])
 
     def test_demo_advance_is_repaid_before_earned_work(self):
         self.assertEqual(self.client.post("/api/workers/Alex/advance", json={"amount_work": 10}).status_code, 201)
