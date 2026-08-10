@@ -19,7 +19,7 @@
 
     <main class="mx-auto max-w-6xl space-y-8 p-6">
       <section class="rounded-xl border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-100">
-        Contribution consent is required. Rewards are recorded only after server-side review. ERC-20 testnet settlement requires a deployed contract and isolated oracle; ERC-20 transfers are not fiat cash-out. Do not submit personal, sensitive, or copyrighted material.
+        Contribution consent is required. Rewards are recorded only after server-side review. Base Sepolia ERC-20 settlement requires a deployed contract and isolated oracle; ERC-20 transfers are not fiat cash-out. Do not submit personal, sensitive, or copyrighted material.
       </section>
 
       <section class="rounded-xl border border-cyan-900 bg-cyan-950/30 p-4 text-sm text-cyan-50">
@@ -30,7 +30,7 @@
         <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Consent</p><p id="consent-status" class="mt-2 font-semibold text-emerald-400">Required</p></article>
         <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Uploads</p><p id="upload-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
         <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Identity verification</p><p id="identity-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
-        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Testnet settlement</p><p id="onboarding-settlement-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
+        <article class="rounded-xl border border-slate-800 bg-slate-900 p-4"><p class="text-xs uppercase tracking-wider text-slate-400">Base Sepolia settlement</p><p id="onboarding-settlement-status" class="mt-2 font-semibold text-slate-300">Loading</p></article>
       </section>
 
       <section class="grid gap-4 md:grid-cols-3">
@@ -47,7 +47,7 @@
         <article class="rounded-xl border border-slate-800 bg-slate-900 p-5">
           <p class="text-sm text-slate-400">Settlement</p>
           <p id="settlement-status" class="mt-2 text-3xl font-bold text-slate-300">Disabled</p>
-          <p class="mt-2 text-sm text-slate-400">Testnet configuration required.</p>
+          <p class="mt-2 text-sm text-slate-400">Base Sepolia configuration required.</p>
         </article>
       </section>
 
@@ -77,7 +77,7 @@
           <ol class="mt-4 space-y-3 text-sm text-slate-300">
             <li><strong>Validate:</strong> apply server-side quality and fraud checks.</li>
             <li><strong>Calculate:</strong> record an off-chain reward estimate with an audit trail.</li>
-            <li><strong>Settle:</strong> use an approved batch process on a configured testnet before production.</li>
+            <li><strong>Settle:</strong> use an approved batch process on a configured Base Sepolia environment before production.</li>
           </ol>
           <p id="policy" class="mt-5 border-t border-slate-800 pt-4 text-xs leading-5 text-slate-400">Loading settlement policy.</p>
         </aside>
@@ -97,7 +97,7 @@
       <section id="portal-guide" class="rounded-xl border border-cyan-900 bg-slate-900 p-6" aria-labelledby="guide-title">
         <p class="text-sm font-semibold text-cyan-400">Portal guide</p>
         <h2 id="guide-title" class="mt-1 text-lg font-semibold">Ask for help navigating Worx</h2>
-        <p class="mt-2 text-sm text-slate-300">Get help with tasks, consent, wallet connection, rewards, and testnet settlement. Do not enter wallet recovery phrases, passwords, or sensitive contribution data.</p>
+        <p class="mt-2 text-sm text-slate-300">Get help with tasks, consent, wallet connection, rewards, and Base Sepolia settlement. Do not enter wallet recovery phrases, passwords, or sensitive contribution data.</p>
         <div class="mt-4 flex flex-wrap gap-2" aria-label="Suggested questions">
           <button data-guide-question="How do rewards work?" class="guide-question rounded-full border border-slate-700 px-3 py-1 text-sm hover:border-cyan-400">How do rewards work?</button>
           <button data-guide-question="How do I connect my wallet?" class="guide-question rounded-full border border-slate-700 px-3 py-1 text-sm hover:border-cyan-400">Connect wallet</button>
@@ -133,7 +133,7 @@
           if (!response.ok) throw new Error('Overview unavailable');
           const data = await response.json();
           document.querySelector('#contribution-count').textContent = String(data.contributions.length);
-          document.querySelector('#settlement-status').textContent = data.settlement.enabled ? `Testnet: ${data.settlement.network}` : 'Not configured';
+          document.querySelector('#settlement-status').textContent = data.settlement.enabled ? `Base Sepolia: ${data.settlement.network}` : 'Not configured';
           document.querySelector('#policy').textContent = data.reward_policy;
           const queue = document.querySelector('#queue');
           queue.replaceChildren(...data.contributions.map((item) => {
@@ -184,8 +184,15 @@
         if (!window.ethereum) { document.querySelector('#wallet-button').textContent = 'No wallet detected'; return; }
         try {
           const [address] = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          const baseSepoliaChainId = '0x14a34';
+          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+          if (chainId !== baseSepoliaChainId) {
+            await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: baseSepoliaChainId }] });
+          }
           document.querySelector('#wallet-button').textContent = `${address.slice(0, 6)}…${address.slice(-4)}`;
-        } catch (_) { document.querySelector('#wallet-button').textContent = 'Connection declined'; }
+        } catch (error) {
+          document.querySelector('#wallet-button').textContent = error && error.code === 4902 ? 'Add Base Sepolia in wallet' : 'Connection declined';
+        }
       });
 
       loadOnboarding();

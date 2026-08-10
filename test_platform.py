@@ -36,10 +36,10 @@ class TestWorkPlatform(unittest.TestCase):
             "content_sha256": "a" * 64,
         })
 
-    def test_settlement_requires_valid_testnet_configuration(self):
-        with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "not-an-address"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
+    def test_settlement_requires_valid_base_sepolia_configuration(self):
+        with patch.object(PlatformConfig, "BASE_SEPOLIA_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "not-an-address"):
             self.assertFalse(settlement_status()["enabled"])
-        with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000001"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
+        with patch.object(PlatformConfig, "BASE_SEPOLIA_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000001"):
             status = settlement_status()
             self.assertTrue(status["enabled"])
             self.assertFalse(status["cashout"]["available"])
@@ -207,7 +207,7 @@ class TestWorkPlatform(unittest.TestCase):
         self.assertEqual(self.register_contribution(submission["id"]).status_code, 409)
 
     def test_testnet_payout_batch_records_oracle_transaction_without_signing(self):
-        with patch.object(PlatformConfig, "TESTNET_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000001"), patch.object(PlatformConfig, "EVM_TESTNET_CHAIN_ID", "11155111"), patch.object(PlatformConfig, "EVM_NETWORK_NAME", "sepolia"):
+        with patch.object(PlatformConfig, "BASE_SEPOLIA_SETTLEMENT_ENABLED", True), patch.object(PlatformConfig, "ETHEREUM_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000001"):
             created = self.submit_voice()
             submission_id = created.get_json()["submission"]["id"]
             self.client.post(f"/api/submissions/{submission_id}/review", headers=self.contract_admin_headers, json={"decision": "approved"})
