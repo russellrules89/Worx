@@ -100,17 +100,14 @@ def valid_transaction_hash(value):
 def settlement_status():
     """Expose only settlement readiness; transaction signing stays in an isolated oracle."""
     configured = bool(
-        PlatformConfig.TESTNET_SETTLEMENT_ENABLED
+        PlatformConfig.BASE_SEPOLIA_SETTLEMENT_ENABLED
         and valid_wallet_address(PlatformConfig.ETHEREUM_CONTRACT_ADDRESS)
-        and str(PlatformConfig.EVM_TESTNET_CHAIN_ID).isdigit()
-        and int(PlatformConfig.EVM_TESTNET_CHAIN_ID) > 0
-        and PlatformConfig.EVM_NETWORK_NAME
     )
     return {
         "enabled": configured,
-        "environment": "testnet" if configured else "not_configured",
-        "network": PlatformConfig.EVM_NETWORK_NAME or None,
-        "chain_id": PlatformConfig.EVM_TESTNET_CHAIN_ID or None,
+        "environment": "base-sepolia" if configured else "not_configured",
+        "network": PlatformConfig.BASE_SEPOLIA_NETWORK_NAME if configured else None,
+        "chain_id": PlatformConfig.BASE_SEPOLIA_CHAIN_ID if configured else None,
         "contract": PlatformConfig.ETHEREUM_CONTRACT_ADDRESS or None,
         "standard": "ERC-20",
         "cashout": {
@@ -151,7 +148,7 @@ def worker_overview():
             {"id": "sample-001", "type": "Audio annotation", "status": "Awaiting validation", "reward": "Not calculated"},
             {"id": "sample-002", "type": "Data annotation", "status": "Ready to contribute", "reward": "Not calculated"},
         ],
-        reward_policy="Rewards are only calculated after server-side validation and remain off-chain until a configured testnet settlement process is approved.",
+        reward_policy="Rewards are only calculated after server-side validation and remain off-chain until a configured Base Sepolia settlement process is approved.",
         settlement=settlement_status(),
     )
 
@@ -180,7 +177,7 @@ def portal_assistant():
     if gateway_key and PlatformConfig.AI_GATEWAY_MODEL:
         try:
             from openai import OpenAI
-            system_prompt = """You are the Worx portal guide. Help contributors navigate only this portal: tasks, consent, wallet connection, rewards, and testnet settlement. Be concise and accurate. Never ask for recovery phrases, passwords, private keys, identity documents, or contribution content. Do not promise payments or cash-out. ERC-20 transfers are not fiat cash-out; any redemption requires a compliant provider. If a feature is unavailable, state that plainly and point to the next available step."""
+            system_prompt = """You are the Worx portal guide. Help contributors navigate only this portal: tasks, consent, wallet connection, rewards, and Base Sepolia settlement. Be concise and accurate. Never ask for recovery phrases, passwords, private keys, identity documents, or contribution content. Do not promise payments or cash-out. ERC-20 transfers are not fiat cash-out; any redemption requires a compliant provider. If a feature is unavailable, state that plainly and point to the next available step."""
             context = f"Current portal state: uploads={False}; identity_verification={False}; settlement_enabled={settlement['enabled']}; network={settlement['network']}; cashout_available={settlement['cashout']['available']}."
             client = OpenAI(api_key=gateway_key, base_url="https://ai-gateway.vercel.sh/v1")
             completion = client.chat.completions.create(
@@ -299,7 +296,7 @@ def publish_synthetic_task(task_id):
     future_contract["allocated_work"] += allocation
     task.update({"status": "open", "reward_work": reward, "required_submissions": quantity, "funding_usdc": float(Decimal(allocation) / Decimal("100")), "voucher_sponsor": future_contract["client_name"], "future_contract_id": future_contract["id"]})
     task["provenance"].update({"human_review_required": False, "reviewed_at": now(), "eligible_for_rewards": True, "funding_reference": future_contract["contract_reference"]})
-    return jsonify(success=True, data_mode="demo", task=public_task(task), note="Published only after review and contracted-work allocation. Issuance remains testnet-only and subject to approved-submission validation."), 200
+    return jsonify(success=True, data_mode="demo", task=public_task(task), note="Published only after review and contracted-work allocation. Issuance remains Base Sepolia-only and subject to approved-submission validation."), 200
 
 
 @app.post("/api/client/tasks")
@@ -524,7 +521,7 @@ def create_payout_batch():
     batch = {"id": str(uuid4()), "chain_id": settlement["chain_id"], "contract": settlement["contract"], "issuance_submission_ids": [item["submission_id"] for item in eligible], "status": "awaiting_oracle_submission", "created_at": now(), "transaction_hash": None}
     for issuance in eligible: issuance["status"] = "batched_for_testnet_oracle"; issuance["payout_batch_id"] = batch["id"]
     payout_batches.insert(0, batch)
-    return jsonify(success=True, data_mode="demo", payout_batch=batch, note="Send this batch to an authenticated testnet oracle. The application cannot sign transactions or hold custody keys."), 201
+    return jsonify(success=True, data_mode="demo", payout_batch=batch, note="Send this batch to an authenticated Base Sepolia oracle. The application cannot sign transactions or hold custody keys."), 201
 
 
 @app.post("/api/payout-batches/<batch_id>/submit")
@@ -557,7 +554,7 @@ def request_demo_advance(worker_name):
 def worker_ledger():
     approved = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     pending = sum(item["final_reward_work"] for item in submissions if item["status"] == "pending_review")
-    return jsonify(data_mode="demo", approved_wwp_payment_work=approved, pending_wwp_payment_work=pending, estimated_work_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, settlement=settlement_status(), note="The ledger is the source of truth for approved contributions. A separately authenticated oracle may mint one unique ERC-20 proof per approved submission after testnet settlement is configured.")
+    return jsonify(data_mode="demo", approved_wwp_payment_work=approved, pending_wwp_payment_work=pending, estimated_work_value_usdc=float(Decimal(approved) / Decimal("100")), entries=ledger_entries, settlement=settlement_status(), note="The ledger is the source of truth for approved contributions. A separately authenticated oracle may mint one unique ERC-20 proof per approved submission after Base Sepolia settlement is configured.")
 
 
 @app.get("/api/token/distribution")
