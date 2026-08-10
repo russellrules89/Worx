@@ -76,6 +76,9 @@ class TestWorkPlatform(unittest.TestCase):
     def test_health_endpoint_response(self):
         self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
 
+    def test_favicon_request_is_not_a_not_found_error(self):
+        self.assertEqual(self.client.get("/favicon.ico").status_code, 204)
+
     def test_client_can_create_demo_task_with_allocation(self):
         response = self.client.post("/api/client/tasks", json={"client_name": "Client", "title": "A task", "instructions": "Label it", "kind": "annotation", "reward_work": 10, "required_submissions": 100})
         self.assertEqual(response.status_code, 201)
