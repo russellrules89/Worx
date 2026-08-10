@@ -21,6 +21,7 @@ tasks = [
     {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usdc": 3.00, "voucher_sponsor": "Northstar Labs", "future_contract_id": None},
 ]
 submissions = []
+training_runs = []
 ledger_entries = []
 token_issuances = []
 future_work_contracts = []
@@ -57,6 +58,22 @@ def contract_volume_summary():
     completed = sum(item["credit_work"] for item in ledger_entries if item["type"] == "approved_work")
     issued = sum(item["amount_wwp"] for item in token_issuances)
     return {"completed_work": completed, "future_contracted_work": contracted, "maximum_backed_wwp": completed + contracted, "issued_wwp": issued, "unissued_backing_wwp": completed + contracted - issued}
+
+
+def approved_training_manifest():
+    """Return consented, reviewed records eligible for a private training pipeline."""
+    return [
+        {
+            "submission_id": submission["id"],
+            "task_id": submission["task_id"],
+            "kind": next((task["kind"] for task in tasks if task["id"] == submission["task_id"]), None),
+            "consent_policy_version": submission["consent"]["policy_version"],
+            "submitted_at": submission["submitted_at"],
+            "content_reference": "private-storage-required",
+        }
+        for submission in submissions
+        if submission["status"] == "approved"
+    ]
 
 
 def get_worker(worker_name):
@@ -408,6 +425,36 @@ def review_submission(submission_id):
         if reward > debt_paid:
             token_issuances.insert(0, {"submission_id": submission_id, "worker_name": submission["worker_name"], "wallet_address": submission["wallet_address"], "amount_wwp": reward - debt_paid, "status": "pending_testnet_oracle", "created_at": now(), "note": "No on-chain payment is made until the worker wallet, deployed contract, network, and authorized oracle are configured."})
     return jsonify(success=True, data_mode="demo", submission=submission)
+
+
+@app.get("/api/training/manifest")
+def training_manifest():
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    return jsonify(
+        data_mode="demo",
+        records=approved_training_manifest(),
+        note="Only consented, approved contribution metadata is included. Store source data privately, document retention and deletion controls, and use a secured training pipeline before training a model.",
+    )
+
+
+@app.post("/api/training/runs")
+def create_training_run():
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    manifest = approved_training_manifest()
+    if not manifest:
+        return jsonify(success=False, error="At least one consented, approved submission is required before preparing a training run"), 409
+    training_run = {
+        "id": str(uuid4()),
+        "status": "awaiting_private_pipeline",
+        "manifest_submission_ids": [record["submission_id"] for record in manifest],
+        "created_at": now(),
+        "model_artifact": None,
+        "note": "This app does not train or publish a model. A secured external pipeline must validate provenance, retention, and model-release approval.",
+    }
+    training_runs.insert(0, training_run)
+    return jsonify(success=True, data_mode="demo", training_run=training_run), 201
 
 
 @app.post("/api/workers/<worker_name>/advance")
