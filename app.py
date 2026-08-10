@@ -139,6 +139,11 @@ def system_health():
     return jsonify(status="ok", service="worx"), 200
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return "", 204
+
+
 @app.get("/api/worker/overview")
 def worker_overview():
     """Preview-only portal summary; no work, reward, or settlement is processed."""
