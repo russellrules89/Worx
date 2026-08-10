@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -21,9 +22,11 @@ tasks = [
     {"id": "label-brief-02", "client_name": "Northstar Labs", "title": "Classify a support message", "instructions": "Choose the category that best matches the message.", "reward_work": 6, "status": "open", "kind": "annotation", "required_submissions": 50, "submitted_count": 0, "funding_usdc": 3.00, "voucher_sponsor": "Northstar Labs", "future_contract_id": None},
 ]
 submissions = []
+contribution_records = []
 training_runs = []
 ledger_entries = []
 token_issuances = []
+payout_batches = []
 future_work_contracts = []
 token_sale_requests = []
 investor_interest_records = []
@@ -61,7 +64,8 @@ def contract_volume_summary():
 
 
 def approved_training_manifest():
-    """Return consented, reviewed records eligible for a private training pipeline."""
+    """Return consented, reviewed, privately stored records eligible for training."""
+    records_by_submission = {record["submission_id"]: record for record in contribution_records}
     return [
         {
             "submission_id": submission["id"],
@@ -69,10 +73,11 @@ def approved_training_manifest():
             "kind": next((task["kind"] for task in tasks if task["id"] == submission["task_id"]), None),
             "consent_policy_version": submission["consent"]["policy_version"],
             "submitted_at": submission["submitted_at"],
-            "content_reference": "private-storage-required",
+            "storage_reference": records_by_submission[submission["id"]]["storage_reference"],
+            "content_sha256": records_by_submission[submission["id"]]["content_sha256"],
         }
         for submission in submissions
-        if submission["status"] == "approved"
+        if submission["status"] == "approved" and submission["id"] in records_by_submission
     ]
 
 
@@ -82,6 +87,14 @@ def get_worker(worker_name):
 
 def valid_wallet_address(value):
     return isinstance(value, str) and len(value) == 42 and value.startswith("0x") and all(char in "0123456789abcdefABCDEF" for char in value[2:])
+
+
+def valid_content_hash(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[a-fA-F0-9]{64}", value))
+
+
+def valid_transaction_hash(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"0x[a-fA-F0-9]{64}", value))
 
 
 def settlement_status():
@@ -207,6 +220,28 @@ def portal_assistant():
 @app.post("/api/uploads/session")
 def create_upload_session():
     return jsonify(success=False, error="Uploads are not configured. Set up private storage, scanning, retention, and consent controls before accepting files."), 503
+
+
+@app.post("/api/contributions")
+def register_contribution_reference():
+    """Register a private contribution reference; bytes are never accepted by this API."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="A JSON request body is required"), 400
+    submission = next((item for item in submissions if item["id"] == payload.get("submission_id")), None)
+    storage_reference = payload.get("storage_reference")
+    content_sha256 = payload.get("content_sha256")
+    if submission is None or submission["status"] != "pending_review":
+        return jsonify(success=False, error="A pending submission is required"), 409
+    if not isinstance(storage_reference, str) or not 1 <= len(storage_reference.strip()) <= 500:
+        return jsonify(success=False, error="storage_reference must contain 1 to 500 characters"), 400
+    if not valid_content_hash(content_sha256):
+        return jsonify(success=False, error="content_sha256 must be a SHA-256 hex digest"), 400
+    if any(record["submission_id"] == submission["id"] for record in contribution_records):
+        return jsonify(success=False, error="A contribution reference is already registered for this submission"), 409
+    record = {"id": str(uuid4()), "submission_id": submission["id"], "storage_reference": storage_reference.strip(), "content_sha256": content_sha256.lower(), "consent_policy_version": submission["consent"]["policy_version"], "status": "awaiting_review", "created_at": now()}
+    contribution_records.insert(0, record)
+    return jsonify(success=True, data_mode="demo", contribution=record, note="Store encrypted data in private object storage. This endpoint records only a reference and integrity hash."), 201
 
 
 @app.get("/api/tasks")
@@ -411,6 +446,10 @@ def review_submission(submission_id):
     if submission is None: return jsonify(success=False, error="Submission not found"), 404
     if submission["status"] != "pending_review": return jsonify(success=False, error="Only pending submissions can be reviewed"), 409
     submission["status"] = payload["decision"]; submission["reviewed_at"] = now()
+    contribution = next((item for item in contribution_records if item["submission_id"] == submission_id), None)
+    if contribution is not None:
+        contribution["status"] = "approved_for_training" if payload["decision"] == "approved" else "not_approved"
+        contribution["reviewed_at"] = submission["reviewed_at"]
     if payload["decision"] == "approved":
         account = get_worker(submission["worker_name"]); reward = submission["final_reward_work"]
         task = next(item for item in tasks if item["id"] == submission["task_id"])
@@ -455,6 +494,53 @@ def create_training_run():
     }
     training_runs.insert(0, training_run)
     return jsonify(success=True, data_mode="demo", training_run=training_run), 201
+
+
+@app.post("/api/training/runs/<run_id>/complete")
+def complete_training_run(run_id):
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    payload = request.get_json(silent=True) or {}
+    training_run = next((item for item in training_runs if item["id"] == run_id), None)
+    artifact_reference = payload.get("model_artifact_reference")
+    if training_run is None: return jsonify(success=False, error="Training run not found"), 404
+    if training_run["status"] != "awaiting_private_pipeline": return jsonify(success=False, error="Only queued training runs can be completed"), 409
+    if not isinstance(artifact_reference, str) or not 1 <= len(artifact_reference.strip()) <= 500:
+        return jsonify(success=False, error="model_artifact_reference must contain 1 to 500 characters"), 400
+    training_run.update({"status": "completed", "model_artifact": artifact_reference.strip(), "completed_at": now()})
+    return jsonify(success=True, data_mode="demo", training_run=training_run, note="The pipeline completion record does not authorize token minting or a worker payout."), 200
+
+
+@app.post("/api/payout-batches")
+def create_payout_batch():
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    settlement = settlement_status()
+    if not settlement["enabled"]:
+        return jsonify(success=False, error="Testnet settlement must be configured before creating a payout batch"), 409
+    eligible = [item for item in token_issuances if item["status"] == "pending_testnet_oracle" and valid_wallet_address(item["wallet_address"])]
+    if not eligible:
+        return jsonify(success=False, error="No wallet-addressed approved-work issuances are ready for settlement"), 409
+    batch = {"id": str(uuid4()), "chain_id": settlement["chain_id"], "contract": settlement["contract"], "issuance_submission_ids": [item["submission_id"] for item in eligible], "status": "awaiting_oracle_submission", "created_at": now(), "transaction_hash": None}
+    for issuance in eligible: issuance["status"] = "batched_for_testnet_oracle"; issuance["payout_batch_id"] = batch["id"]
+    payout_batches.insert(0, batch)
+    return jsonify(success=True, data_mode="demo", payout_batch=batch, note="Send this batch to an authenticated testnet oracle. The application cannot sign transactions or hold custody keys."), 201
+
+
+@app.post("/api/payout-batches/<batch_id>/submit")
+def submit_payout_batch(batch_id):
+    if not contract_admin_authorized():
+        return jsonify(success=False, error="Contract administrator authorization is required"), 403
+    payload = request.get_json(silent=True) or {}
+    batch = next((item for item in payout_batches if item["id"] == batch_id), None)
+    transaction_hash = payload.get("transaction_hash")
+    if batch is None: return jsonify(success=False, error="Payout batch not found"), 404
+    if batch["status"] != "awaiting_oracle_submission": return jsonify(success=False, error="Only pending batches can be submitted"), 409
+    if not valid_transaction_hash(transaction_hash): return jsonify(success=False, error="transaction_hash must be a 32-byte transaction hash"), 400
+    batch.update({"status": "oracle_submitted", "transaction_hash": transaction_hash.lower(), "submitted_at": now()})
+    for issuance in token_issuances:
+        if issuance.get("payout_batch_id") == batch_id: issuance["status"] = "testnet_transaction_submitted"; issuance["transaction_hash"] = batch["transaction_hash"]
+    return jsonify(success=True, data_mode="demo", payout_batch=batch, note="Transaction submission is recorded but not chain-verified. Verify confirmations independently before marking a payout complete."), 200
 
 
 @app.post("/api/workers/<worker_name>/advance")
