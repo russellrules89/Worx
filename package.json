@@ -1,0 +1,11 @@
+{
+  "name": "worx-ai-gateway-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ai:stream": "node scripts/ai-gateway-stream.mjs"
+  },
+  "dependencies": {
+    "ai": "^7.0.58"
+  }
+}
