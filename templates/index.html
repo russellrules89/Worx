@@ -13,7 +13,7 @@
           <p class="text-xs font-bold uppercase tracking-[0.24em] text-cyan-400">Worx contributor network</p>
           <h1 class="mt-1 text-xl font-semibold">Worker portal</h1>
         </div>
-        <button id="wallet-button" class="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold hover:border-cyan-400">Connect wallet</button>
+        <button id="wallet-button" class="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold hover:border-cyan-400">Sign in with wallet</button>
       </div>
     </header>
 
@@ -180,20 +180,30 @@
       });
       document.querySelectorAll('.guide-question').forEach((button) => button.addEventListener('click', () => askGuide(button.dataset.guideQuestion)));
 
-      document.querySelector('#wallet-button').addEventListener('click', async () => {
-        if (!window.ethereum) { document.querySelector('#wallet-button').textContent = 'No wallet detected'; return; }
+      async function signInWithWallet() {
+        const button = document.querySelector('#wallet-button');
+        if (!window.ethereum) { button.textContent = 'No wallet detected'; return; }
+        button.disabled = true;
+        button.textContent = 'Requesting wallet…';
         try {
           const [address] = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          const baseSepoliaChainId = '0x14a34';
-          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-          if (chainId !== baseSepoliaChainId) {
-            await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: baseSepoliaChainId }] });
-          }
-          document.querySelector('#wallet-button').textContent = `${address.slice(0, 6)}…${address.slice(-4)}`;
+          const nonceResponse = await fetch('/api/auth/wallet/nonce', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }) });
+          const nonce = await nonceResponse.json();
+          if (!nonceResponse.ok) throw new Error(nonce.error || 'Unable to start sign-in');
+          button.textContent = 'Sign message in wallet…';
+          const signature = await window.ethereum.request({ method: 'personal_sign', params: [nonce.message, address] });
+          const verifyResponse = await fetch('/api/auth/wallet/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, signature, challenge: nonce.challenge }) });
+          const login = await verifyResponse.json();
+          if (!verifyResponse.ok) throw new Error(login.error || 'Sign-in failed');
+          button.textContent = `${login.wallet_address.slice(0, 6)}…${login.wallet_address.slice(-4)}`;
         } catch (error) {
-          document.querySelector('#wallet-button').textContent = error && error.code === 4902 ? 'Add Base Sepolia in wallet' : 'Connection declined';
+          button.textContent = error && error.message ? error.message : 'Sign-in declined';
+        } finally {
+          button.disabled = false;
         }
-      });
+      }
+
+      document.querySelector('#wallet-button').addEventListener('click', signInWithWallet);
 
       loadOnboarding();
       loadOverview();
