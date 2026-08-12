@@ -9,6 +9,7 @@ import stripe
 from flask import Flask, jsonify, render_template, request
 
 from config import PlatformConfig
+from payment_402 import PRODUCTS, challenge, challenge_header, parse_proof, proof_hash, verify
 
 app = Flask(__name__, template_folder="templates")
 app.config.from_object(PlatformConfig)
@@ -30,6 +31,7 @@ payout_batches = []
 future_work_contracts = []
 token_sale_requests = []
 investor_interest_records = []
+data_access_entitlements = {}
 worker_accounts = {}
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
 SYNTHETIC_ANNOTATION_EXAMPLES = [
@@ -212,6 +214,33 @@ def portal_assistant():
         reply = "I can help you find tasks, explain consent, connect a wallet, understand rewards, or check settlement status. Try: ‘How do rewards work?’"
         action = "help"
     return jsonify(success=True, assistant="Worx guide", mode="guided", reply=reply, action=action, settlement=settlement)
+
+
+@app.get("/api/v1/data-packets/<product_id>")
+def paid_data_packet(product_id):
+    """Release only explicitly approved, de-identified packets after settlement verification."""
+    product = PRODUCTS.get(product_id)
+    if product is None:
+        return jsonify(error="Data product not found"), 404
+    payment_challenge = challenge(product, request.url)
+    proof = parse_proof(request.headers.get("Payment-Proof"))
+    headers = {"Payment-Required": challenge_header(payment_challenge), "Cache-Control": "no-store"}
+    if proof is None or proof["amountAtomic"] != product["price_atomic"] or proof["termsVersion"] != product["terms_version"]:
+        return jsonify(error="payment_required", payment=payment_challenge), 402, headers
+
+    entitlement = data_access_entitlements.get(proof["paymentId"])
+    if entitlement:
+        if entitlement["product_id"] != product_id or entitlement["payer"] != proof["payer"] or entitlement["proof_hash"] != proof_hash(proof):
+            return jsonify(error="payment_replay_rejected"), 409
+    else:
+        settlement = verify(proof, payment_challenge)
+        if settlement is None:
+            return jsonify(error="payment_required", payment=payment_challenge), 402, headers
+        data_access_entitlements[proof["paymentId"]] = {
+            "product_id": product_id, "payer": proof["payer"], "proof_hash": proof_hash(proof),
+            "terms_version": product["terms_version"], "created_at": now(),
+        }
+    return jsonify(product={"id": product_id, "name": product["name"], "termsVersion": product["terms_version"]}, packet=product["packet"]), 200, {"Cache-Control": "private, no-store"}
 
 
 @app.post("/api/uploads/session")
