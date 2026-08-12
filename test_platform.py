@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import PlatformConfig, app, contribution_records, tasks, future_work_contracts, investor_interest_records, ledger_entries, payout_batches, settlement_status, submissions, token_issuances, token_sale_requests, training_runs, worker_accounts
+from app import PlatformConfig, app, contribution_records, data_access_entitlements, tasks, future_work_contracts, investor_interest_records, ledger_entries, payout_batches, settlement_status, submissions, token_issuances, token_sale_requests, training_runs, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
@@ -19,6 +19,7 @@ class TestWorkPlatform(unittest.TestCase):
         token_sale_requests.clear()
         investor_interest_records.clear()
         worker_accounts.clear()
+        data_access_entitlements.clear()
         tasks[:] = [item for item in tasks if item["id"] in {"voice-brief-01", "label-brief-02"}]
 
     def submit_voice(self, worker="Alex"):
@@ -72,6 +73,15 @@ class TestWorkPlatform(unittest.TestCase):
         task = response.get_json()["task"]
         self.assertEqual(task["status"], "open")
         self.assertTrue(task["provenance"]["eligible_for_rewards"])
+
+    def test_data_packet_returns_a_fail_closed_402_challenge(self):
+        response = self.client.get("/api/v1/data-packets/workforce-quality-summary-v1")
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(response.get_json()["payment"]["currency"], "USDC")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_unknown_data_packet_is_not_disclosed(self):
+        self.assertEqual(self.client.get("/api/v1/data-packets/nope").status_code, 404)
 
     def test_health_endpoint_response(self):
         self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
