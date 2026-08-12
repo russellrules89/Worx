@@ -10,6 +10,10 @@ class PlatformConfig:
     """Application configuration sourced from the environment."""
 
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY")
+    PERMANENT_SESSION_LIFETIME = 60 * 60 * 8
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = True
     STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "")
     STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     # Base Sepolia is the only supported settlement network in this release.

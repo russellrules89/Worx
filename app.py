@@ -1,12 +1,15 @@
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
 import stripe
-from flask import Flask, jsonify, render_template, request
+from eth_account import Account
+from eth_account.messages import encode_defunct
+from itsdangerous import BadSignature, URLSafeTimedSerializer
+from flask import Flask, jsonify, render_template, request, session
 
 from config import PlatformConfig
 
@@ -31,6 +34,7 @@ future_work_contracts = []
 token_sale_requests = []
 investor_interest_records = []
 worker_accounts = {}
+WALLET_LOGIN_NONCE_TTL = timedelta(minutes=10)
 PROMPT_PHRASES = ["The maple train arrives at sunrise.", "Blue lanterns shine over the market.", "A quiet river follows the stone bridge."]
 SYNTHETIC_ANNOTATION_EXAMPLES = [
     ("Classify the message: ‘I cannot reset my password.’", "Account access"),
@@ -127,6 +131,70 @@ def contract_admin_authorized():
     expected_key = app.config.get("CONTRACT_ADMIN_API_KEY", "")
     supplied_key = request.headers.get("X-Contract-Admin-Key", "")
     return bool(expected_key) and secrets.compare_digest(supplied_key, expected_key)
+
+
+def wallet_login_message(address, nonce):
+    return f"Sign in to Worx\nWallet: {address}\nNonce: {nonce}"
+
+
+def wallet_login_serializer():
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="worx-wallet-login")
+
+
+def valid_wallet_login_address(value):
+    return valid_wallet_address(value) and value == value.lower()
+
+
+@app.post("/api/auth/wallet/nonce")
+def create_wallet_login_nonce():
+    if not app.config.get("SECRET_KEY"):
+        return jsonify(success=False, error="Wallet login is not configured"), 503
+    payload = request.get_json(silent=True)
+    address = payload.get("address", "") if isinstance(payload, dict) else ""
+    address = address.lower() if isinstance(address, str) else ""
+    if not valid_wallet_login_address(address):
+        return jsonify(success=False, error="A valid wallet address is required"), 400
+    nonce = secrets.token_urlsafe(32)
+    challenge = wallet_login_serializer().dumps({"address": address, "nonce": nonce})
+    return jsonify(success=True, message=wallet_login_message(address, nonce), challenge=challenge, expires_in_seconds=int(WALLET_LOGIN_NONCE_TTL.total_seconds()))
+
+
+@app.post("/api/auth/wallet/verify")
+def verify_wallet_login():
+    if not app.config.get("SECRET_KEY"):
+        return jsonify(success=False, error="Wallet login is not configured"), 503
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="A JSON request body is required"), 400
+    address = payload.get("address", "")
+    signature = payload.get("signature", "")
+    challenge = payload.get("challenge", "")
+    address = address.lower() if isinstance(address, str) else ""
+    if not valid_wallet_login_address(address) or not isinstance(signature, str) or not isinstance(challenge, str):
+        return jsonify(success=False, error="Invalid or expired login request"), 401
+    try:
+        login_attempt = wallet_login_serializer().loads(challenge, max_age=int(WALLET_LOGIN_NONCE_TTL.total_seconds()))
+        signer = Account.recover_message(encode_defunct(text=wallet_login_message(login_attempt["address"], login_attempt["nonce"])), signature=signature).lower()
+    except (BadSignature, KeyError, TypeError, ValueError):
+        return jsonify(success=False, error="Invalid or expired login request"), 401
+    if not secrets.compare_digest(login_attempt["address"], address) or not secrets.compare_digest(signer, address):
+        return jsonify(success=False, error="Wallet signature verification failed"), 401
+    session.clear()
+    session["wallet_address"] = address
+    session.permanent = True
+    return jsonify(success=True, wallet_address=address)
+
+
+@app.get("/api/auth/session")
+def wallet_session():
+    address = session.get("wallet_address")
+    return jsonify(authenticated=bool(address), wallet_address=address or None)
+
+
+@app.post("/api/auth/logout")
+def wallet_logout():
+    session.clear()
+    return jsonify(success=True)
 
 
 @app.get("/")

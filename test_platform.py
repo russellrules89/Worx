@@ -1,12 +1,15 @@
 import unittest
 from unittest.mock import patch
 
+from eth_account import Account
+from eth_account.messages import encode_defunct
+
 from app import PlatformConfig, app, contribution_records, tasks, future_work_contracts, investor_interest_records, ledger_entries, payout_batches, settlement_status, submissions, token_issuances, token_sale_requests, training_runs, worker_accounts
 
 
 class TestWorkPlatform(unittest.TestCase):
     def setUp(self):
-        app.config.update(TESTING=True, CONTRACT_ADMIN_API_KEY="test-contract-admin")
+        app.config.update(TESTING=True, SECRET_KEY="test-session-key", CONTRACT_ADMIN_API_KEY="test-contract-admin")
         self.client = app.test_client()
         self.contract_admin_headers = {"X-Contract-Admin-Key": "test-contract-admin"}
         submissions.clear()
@@ -72,6 +75,24 @@ class TestWorkPlatform(unittest.TestCase):
         task = response.get_json()["task"]
         self.assertEqual(task["status"], "open")
         self.assertTrue(task["provenance"]["eligible_for_rewards"])
+
+    def test_wallet_login_requires_a_valid_signature_and_creates_a_session(self):
+        account = Account.create()
+        address = account.address.lower()
+        nonce_response = self.client.post("/api/auth/wallet/nonce", json={"address": address})
+        self.assertEqual(nonce_response.status_code, 200)
+        message = nonce_response.get_json()["message"]
+        signature = Account.sign_message(encode_defunct(text=message), account.key).signature.hex()
+        verified = self.client.post("/api/auth/wallet/verify", json={"address": address, "signature": signature, "challenge": nonce_response.get_json()["challenge"]})
+        self.assertEqual(verified.status_code, 200)
+        self.assertEqual(verified.get_json()["wallet_address"], address)
+        self.assertTrue(self.client.get("/api/auth/session").get_json()["authenticated"])
+
+    def test_wallet_login_rejects_an_invalid_signature(self):
+        address = Account.create().address.lower()
+        challenge = self.client.post("/api/auth/wallet/nonce", json={"address": address}).get_json()["challenge"]
+        response = self.client.post("/api/auth/wallet/verify", json={"address": address, "signature": "0x" + "00" * 65, "challenge": challenge})
+        self.assertEqual(response.status_code, 401)
 
     def test_health_endpoint_response(self):
         self.assertEqual(self.client.get("/health").get_json()["status"], "ok")
